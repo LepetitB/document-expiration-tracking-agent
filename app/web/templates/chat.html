@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ถาม Agent</h1>
+<p class="sub">ถามเป็นภาษาไทยได้เลย — Agent จะค้นข้อมูลจริงจากฐานข้อมูลผ่าน tools {% if not ai_online %}<b>(โหมดออฟไลน์: รองรับคำถามแบบง่าย)</b>{% endif %}</p>
+<div class="card chat">
+  <div class="msgs" id="msgs">
+    <div class="msg bot">สวัสดีครับ 👋 ผมช่วยติดตามเอกสารที่ใกล้หมดอายุได้ ลองถามจากตัวอย่างด้านล่างได้เลยครับ</div>
+  </div>
+  <div class="chips">
+    <button class="chip">30 วันข้างหน้ามีเอกสารอะไรหมดบ้าง</button>
+    <button class="chip">เอกสารที่หมดอายุแล้ว</button>
+    <button class="chip">รถ 70-1234 สถานะเป็นยังไง</button>
+    <button class="chip">สรุปภาพรวมเอกสารทั้งหมด</button>
+    <button class="chip">เดือนหน้าต้องต่ออะไรบ้าง เรียงตามความสำคัญ</button>
+  </div>
+  <form class="composer" id="composer">
+    <input id="q" placeholder="พิมพ์คำถาม…" autocomplete="off">
+    <button class="btn">ส่ง</button>
+    <button type="button" class="btn ghost" id="reset" title="เริ่มบทสนทนาใหม่">↺</button>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const msgs = document.getElementById('msgs'), q = document.getElementById('q');
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function md(text) {   // tiny markdown: **bold**, _italic_, bullet lists, line breaks
+  const lines = esc(text).split('\n'); let html = '', inList = false;
+  for (const raw of lines) {
+    let l = raw.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|\s)_(.+?)_(?=\s|$)/g, '$1<i>$2</i>');
+    const m = l.match(/^\s*[-*•]\s+(.*)/);
+    if (m) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + m[1] + '</li>'; continue; }
+    if (inList) { html += '</ul>'; inList = false; }
+    html += l + '<br>';
+  }
+  return html + (inList ? '</ul>' : '');
+}
+function add(cls, html) { const d = document.createElement('div'); d.className = 'msg ' + cls; d.innerHTML = html; msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight; return d; }
+async function ask(text) {
+  if (!text.trim()) return;
+  add('user', esc(text)); q.value = '';
+  const t = add('bot typing', 'กำลังค้นข้อมูล…');
+  try {
+    const r = await fetch('{{ url_for("chat_api") }}', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message: text})});
+    const data = await r.json();
+    t.className = 'msg bot';
+    t.innerHTML = md(data.answer || data.error) +
+      (data.tools && data.tools.length ? `<div class="meta">🔧 tools: ${data.tools.join(', ')} · ${data.engine}</div>` : `<div class="meta">${data.engine || ''}</div>`);
+  } catch (e) { t.className = 'msg bot'; t.textContent = 'เกิดข้อผิดพลาด: ' + e; }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+document.getElementById('composer').addEventListener('submit', e => { e.preventDefault(); ask(q.value); });
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => ask(c.textContent)));
+document.getElementById('reset').addEventListener('click', async () => {
+  await fetch('{{ url_for("chat_reset") }}', {method: 'POST'});
+  msgs.innerHTML = '<div class="msg bot">เริ่มบทสนทนาใหม่แล้วครับ</div>';
+});
+</script>
+{% endblock %}

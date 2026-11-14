@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import conf with context %}
+{% block content %}
+<h1>ผลการอ่านเอกสาร</h1>
+<p class="sub">เอกสารที่ AI มั่นใจ ≥ 85% และผ่านกฎตรวจสอบจะถูกบันทึกทันที ที่เหลือจะส่งเข้าคิว "ตรวจทาน"</p>
+<div class="card tbl-wrap">
+<table>
+  <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>เจ้าของ</th><th>วันหมดอายุ (ดิบ → แปลงแล้ว)</th><th>ความมั่นใจ</th><th>ผล</th><th></th></tr></thead>
+  <tbody>
+  {% for r in results %}
+    {% if r.error %}
+      <tr><td>{{ r.filename }}</td><td colspan="6" class="muted">❌ {{ r.error }}</td></tr>
+    {% else %}
+      {% set ex = r.ex %}
+      <tr>
+        <td class="small">{{ r.filename }}<br><span class="muted">{{ ex.engine }}</span></td>
+        <td>{{ doc_label(ex.doc_type or 'OTHER') }}</td>
+        <td>{{ ex.vehicle_plate or ex.holder_name or '-' }}</td>
+        <td><span class="muted small">{{ ex.expiry_date_raw or '-' }}</span><br>→ <b>{{ ex.expiry_date|thai }}</b>
+          {% if ex.expiry_date %}<span class="small muted">({{ ex.expiry_date }})</span>{% endif %}</td>
+        <td>{{ conf(ex.confidence) }}</td>
+        <td>{% if ex.needs_review %}<span class="pill PENDING_REVIEW">🟣 รอตรวจทาน</span>
+            <div class="small muted">{{ ex.problems|join(', ') }}</div>
+            {% else %}<span class="pill VALID">✅ บันทึกแล้ว</span>{% endif %}</td>
+        <td><a class="btn {{ '' if ex.needs_review else 'ghost' }} sm" href="{{ url_for('document_detail', doc_id=r.id) }}">{{ 'ตรวจทาน' if ex.needs_review else 'ดู' }}</a></td>
+      </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="actions"><a class="btn ghost" href="{{ url_for('upload') }}">อัปโหลดเพิ่ม</a><a class="btn" href="{{ url_for('dashboard') }}">ไป Dashboard</a></div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>อัปโหลดเอกสาร</h1>
+<p class="sub">ลากไฟล์รูปถ่าย / สแกน / PDF มาวาง ระบบจะจำแนกประเภทและดึงวันหมดอายุให้อัตโนมัติ</p>
+
+<form class="card" method="post" enctype="multipart/form-data" id="upform">
+  <label class="drop" id="drop">
+    <div class="big">📥</div>
+    <div><b>คลิกเพื่อเลือกไฟล์</b> หรือลากไฟล์มาวางที่นี่ (เลือกได้หลายไฟล์)</div>
+    <div class="small muted">รองรับ PDF, JPG, PNG, WEBP, TXT · สูงสุด 25MB</div>
+    <input type="file" name="files" id="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" hidden>
+    <div id="filelist"></div>
+  </label>
+  <div class="actions" style="align-items:center">
+    <label class="small">วิธีอ่านเอกสาร:
+      <select name="engine">
+        <option value="auto">อัตโนมัติ ({{ 'Claude Vision' if ai_online else 'ระบบกฎ — ไม่มี API key' }})</option>
+        <option value="claude" {{ 'disabled' if not ai_online }}>Claude Vision (AI)</option>
+        <option value="rules">ระบบกฎ (baseline: ข้อความ PDF + regex)</option>
+      </select>
+    </label>
+    <button class="btn" id="go">🔍 อ่านเอกสาร</button>
+    <span id="busy" class="muted" hidden>⏳ กำลังอ่านเอกสาร… (AI อาจใช้เวลาไฟล์ละ 10–30 วินาที)</span>
+  </div>
+</form>
+
+<div class="card" style="margin-top:16px">
+  <h2>ลองกับเอกสารตัวอย่าง</h2>
+  <p class="small muted">มีไฟล์ตัวอย่าง (ข้อมูลสมมติ) อยู่ในโฟลเดอร์ <code>data/samples/</code> — ไฟล์ <code>.txt</code> / <code>.pdf</code> ใช้ได้ทั้งสองโหมด ส่วนไฟล์รูป <code>.png</code> ต้องใช้ Claude Vision</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const drop = document.getElementById('drop'), input = document.getElementById('files'), list = document.getElementById('filelist');
+const show = () => list.textContent = [...input.files].map(f => '📄 ' + f.name).join('   ');
+input.addEventListener('change', show);
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
+document.getElementById('upform').addEventListener('submit', ev => {
+  if (!input.files.length) { ev.preventDefault(); alert('กรุณาเลือกไฟล์'); return; }
+  document.getElementById('busy').hidden = false; document.getElementById('go').disabled = true;
+});
+</script>
+{% endblock %}

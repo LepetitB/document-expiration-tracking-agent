@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, days with context %}
+{% block content %}
+<h1>Dashboard เอกสาร</h1>
+<p class="sub">ภาพรวมเอกสารที่มีวันหมดอายุของพนักงาน รถ บริษัท และลูกค้า</p>
+
+<div class="grid stats">
+  <a class="card stat" href="{{ url_for('dashboard') }}"><div class="n">{{ total }}</div><div class="l">เอกสารทั้งหมด</div></a>
+  <a class="card stat red" href="?status=EXPIRED"><div class="n">{{ counts.EXPIRED or 0 }}</div><div class="l">🔴 หมดอายุแล้ว</div></a>
+  <a class="card stat amber" href="?status=EXPIRING"><div class="n">{{ counts.EXPIRING or 0 }}</div><div class="l">🟡 ใกล้หมดอายุ</div></a>
+  <a class="card stat green" href="?status=VALID"><div class="n">{{ counts.VALID or 0 }}</div><div class="l">🟢 ปกติ</div></a>
+  <a class="card stat violet" href="{{ url_for('review_queue') }}"><div class="n">{{ counts.PENDING_REVIEW or 0 }}</div><div class="l">🟣 รอตรวจทาน</div></a>
+</div>
+
+<div class="grid two">
+  <div class="card">
+    <h2>จำนวนเอกสารที่จะหมดอายุ (12 เดือนข้างหน้า)</h2>
+    <div class="bars">
+      {% for m in months %}
+      <div class="bar" title="{{ m.label }}: {{ m.n }} ฉบับ">
+        <span class="v">{{ m.n if m.n else '' }}</span>
+        <div class="fill {{ 'zero' if not m.n }}" style="height: {{ (m.n / peak * 100) if m.n else 2 }}%"></div>
+        <span>{{ m.label.split(' ')[0] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <h2>ต้องดำเนินการก่อน</h2>
+    {% if urgent %}
+    <ul class="plain urgent">
+      {% for d in urgent %}
+      <li><span><a href="{{ url_for('document_detail', doc_id=d.id) }}">{{ doc_label(d.doc_type) }}</a><br>
+        <span class="small muted">{{ d.owner_name }}</span></span>
+        <span style="text-align:right">{{ days(d) }}<br><span class="small muted">{{ d.expiry_date|thai }}</span></span></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">ไม่มีเอกสารเร่งด่วน 🎉</p>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get">
+    <input name="q" value="{{ q }}" placeholder="ค้นหา ชื่อ / ทะเบียนรถ / เลขที่เอกสาร" style="min-width:260px">
+    <select name="status">
+      <option value="">ทุกสถานะ</option>
+      {% for k in ['EXPIRED','EXPIRING','VALID','PENDING_REVIEW','UNKNOWN'] %}
+      <option value="{{ k }}" {{ 'selected' if f_status == k }}>{{ STATUS_LABEL[k] }}</option>{% endfor %}
+    </select>
+    <select name="type">
+      <option value="">ทุกประเภท</option>
+      {% for k, v in DOC_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if f_type == k }}>{{ v[0] }}</option>{% endfor %}
+    </select>
+    <button class="btn sm">กรอง</button>
+    {% if q or f_status or f_type %}<a class="btn ghost sm" href="{{ url_for('dashboard') }}">ล้าง</a>{% endif %}
+  </form>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>สถานะ</th><th>ประเภทเอกสาร</th><th>เจ้าของ</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
+    <tbody>
+    {% for d in docs %}
+      <tr>
+        <td>{{ status_pill(d.status) }}</td>
+        <td>{{ doc_label(d.doc_type) }}</td>
+        <td>{{ d.owner_name }}<br><span class="small muted">{{ OWNER_TYPES.get(d.owner_type, '') }}</span></td>
+        <td class="small">{{ d.doc_number or '-' }}</td>
+        <td>{{ d.expiry_date|thai }}</td>
+        <td>{{ days(d) }}</td>
+        <td><a class="btn ghost sm" href="{{ url_for('document_detail', doc_id=d.id) }}">เปิด</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">ไม่พบเอกสาร</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

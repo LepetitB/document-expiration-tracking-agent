@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, days, conf with context %}
+{% block content %}
+{% set fc = raw.get('field_confidence', {}) if raw else {} %}
+{% set pending = doc and doc.review_status == 'PENDING_REVIEW' %}
+{% macro row(label, name, value, c=None, type='text', hl=False) -%}
+  <div class="form-row {{ 'low' if (c is not none and c < 0.85 and hl) }}">
+    <label>{{ label }} {% if c is not none %}{{ conf(c) }}{% endif %}</label>
+    <input type="{{ type }}" name="{{ name }}" value="{{ value or '' }}">
+  </div>
+{%- endmacro %}
+
+{% if doc %}
+  <h1>{{ doc_label(doc.doc_type) }} {{ status_pill(doc.status) }}</h1>
+  <p class="sub">{{ doc.owner_name }} · {{ days(doc) }} · บันทึกเมื่อ {{ doc.created_at[:16].replace('T',' ') }}</p>
+{% else %}
+  <h1>เพิ่มเอกสารด้วยตนเอง</h1>
+  <p class="sub">สำหรับเอกสารที่ไม่มีไฟล์ หรือต้องการกรอกเอง</p>
+{% endif %}
+
+<div class="grid {{ 'review' if doc and doc.file_path }}">
+  {% if doc and doc.file_path %}
+  <div class="preview">
+    {% set fp = doc.file_path.lower() %}
+    {% if fp.endswith('.pdf') %}<iframe src="{{ url_for('files', name=doc.file_path) }}"></iframe>
+    {% elif fp.endswith('.txt') %}<pre id="txt">กำลังโหลด…</pre>
+    {% else %}<img src="{{ url_for('files', name=doc.file_path) }}" alt="เอกสาร">{% endif %}
+  </div>
+  {% endif %}
+
+  <form class="card" method="post" action="{{ url_for('document_detail', doc_id=doc.id) if doc else url_for('new_document') }}">
+    {% if problems and pending %}
+      <div class="problems"><b>⚠️ สิ่งที่ควรตรวจ</b><ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if raw.get('notes') %}<p class="small muted">📝 {{ raw.notes }}</p>{% endif %}
+
+    <div class="form-row {{ 'low' if (fc.get('doc_type') is not none and fc.get('doc_type') < 0.85 and pending) }}">
+      <label>ประเภทเอกสาร {% if fc.get('doc_type') is not none %}{{ conf(fc.doc_type) }}{% endif %}</label>
+      <select name="doc_type">
+        {% for k, v in DOC_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if doc and doc.doc_type == k }}>{{ v[0] }}</option>{% endfor %}
+      </select>
+    </div>
+    {{ row('ชื่อผู้ถือ / บริษัท', 'holder_name', doc.holder_name if doc else '', fc.get('holder_name'), hl=pending) }}
+    {{ row('ทะเบียนรถ (เฉพาะเอกสารรถ)', 'vehicle_plate', raw.get('vehicle_plate') or (doc.owner_identifier if doc and doc.owner_type == 'VEHICLE' else '')) }}
+    {{ row('เลขที่เอกสาร', 'doc_number', doc.doc_number if doc else '', fc.get('doc_number'), hl=pending) }}
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
+      {{ row('วันออกเอกสาร (ค.ศ.)', 'issue_date', doc.issue_date if doc else '', None, 'date') }}
+      {{ row('วันหมดอายุ (ค.ศ.)', 'expiry_date', doc.expiry_date if doc else '', fc.get('expiry_date'), 'date', pending) }}
+    </div>
+    {% if raw.get('expiry_date_raw') %}
+      <p class="raw">ข้อความวันหมดอายุในเอกสาร: <b>{{ raw.expiry_date_raw }}</b>
+        {% if raw.get('year_system') == 'BUDDHIST' %}(พ.ศ. → แปลงเป็น ค.ศ. แล้ว){% endif %}</p>
+    {% endif %}
+    {{ row('หน่วยงานที่ออก', 'issuing_authority', doc.issuing_authority if doc else '') }}
+    {{ row('อีเมลผู้รับผิดชอบ (ไม่บังคับ)', 'owner_email', doc.owner_email if doc else '', None, 'email') }}
+    <div class="form-row"><label>หมายเหตุ</label><textarea name="notes" rows="2">{{ doc.notes if doc and doc.notes else '' }}</textarea></div>
+
+    <div class="actions">
+      {% if pending %}
+        <button class="btn" name="next" value="review">✅ ยืนยัน & ถัดไป</button>
+        <button class="btn ghost" name="next" value="">✅ ยืนยัน</button>
+      {% else %}
+        <button class="btn">💾 บันทึก</button>
+      {% endif %}
+      {% if doc %}<button class="btn danger" name="action" value="delete" onclick="return confirm('ลบเอกสารนี้?')">🗑 ลบ</button>{% endif %}
+    </div>
+    {% if raw.get('engine') %}<p class="raw" style="margin-top:14px">อ่านโดย: {{ raw.engine }} · ความมั่นใจรวม {{ conf(doc.confidence if doc else 1) }}</p>{% endif %}
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if doc and doc.file_path and doc.file_path.lower().endswith('.txt') %}
+<script>fetch("{{ url_for('files', name=doc.file_path) }}").then(r => r.text()).then(t => document.getElementById('txt').textContent = t);</script>
+{% endif %}
+{% endblock %}

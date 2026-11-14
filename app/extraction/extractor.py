@@ -1,0 +1,218 @@
+"""Document classification + key-information extraction.
+
+Two engines:
+* ``claude``  – Claude vision reads the image/PDF and returns JSON (structured outputs).
+* ``rules``   – offline fallback: pypdf text layer / .txt + keyword & regex rules.
+               Used when no API key is configured and as a baseline for evaluation.
+
+Both return the same dict shape, which is then normalised (dates parsed in code)
+and scored by ``app.core.validator``.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import mimetypes
+import re
+from pathlib import Path
+
+from app import config
+from app.core import validator
+from app.extraction.thai_date import find_dates, parse_date
+
+DOC_TYPE_ENUM = list(config.DOC_TYPES.keys())
+
+EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "doc_type": {"type": "string", "enum": DOC_TYPE_ENUM},
+        "doc_number": {"type": ["string", "null"]},
+        "holder_name": {"type": ["string", "null"]},
+        "vehicle_plate": {"type": ["string", "null"]},
+        "issuing_authority": {"type": ["string", "null"]},
+        "issue_date_raw": {"type": ["string", "null"]},
+        "expiry_date_raw": {"type": ["string", "null"]},
+        "year_system": {"type": "string", "enum": ["BUDDHIST", "GREGORIAN", "UNKNOWN"]},
+        "field_confidence": {
+            "type": "object",
+            "properties": {k: {"type": "number"} for k in validator.KEY_FIELDS},
+            "required": list(validator.KEY_FIELDS),
+            "additionalProperties": False,
+        },
+        "notes": {"type": "string"},
+    },
+    "required": ["doc_type", "doc_number", "holder_name", "vehicle_plate", "issuing_authority",
+                 "issue_date_raw", "expiry_date_raw", "year_system", "field_confidence", "notes"],
+    "additionalProperties": False,
+}
+
+DOC_TYPE_GUIDE = "\n".join(f"- {k}: {v[0]}" for k, v in config.DOC_TYPES.items())
+
+EXTRACTION_PROMPT = f"""คุณคือระบบอ่านเอกสารของฝ่ายธุรการบริษัทขนส่ง อ่านเอกสารที่แนบมาแล้วดึงข้อมูลตาม schema
+
+ประเภทเอกสาร (doc_type):
+{DOC_TYPE_GUIDE}
+
+กติกา:
+1. expiry_date_raw = วันหมดอายุ / วันสิ้นสุดความคุ้มครอง / "ใช้ได้ถึง" — คัดลอกข้อความวันที่ตามที่ปรากฏในเอกสารทุกตัวอักษร (เช่น "28 ก.พ. 2570" หรือ "28/02/2027") ห้ามแปลงปีหรือคำนวณเอง
+2. issue_date_raw = วันออกเอกสาร / วันเริ่มคุ้มครอง (คัดลอกตามจริงเช่นกัน) — อย่าสับสนกับวันเกิด
+3. year_system = BUDDHIST ถ้าปีในเอกสารเป็น พ.ศ., GREGORIAN ถ้าเป็น ค.ศ.
+4. holder_name = ชื่อบุคคลหรือบริษัทผู้ถือเอกสาร; vehicle_plate = ทะเบียนรถพร้อมจังหวัดถ้ามี (เฉพาะเอกสารเกี่ยวกับรถ)
+5. ถ้าไม่พบฟิลด์ใดให้ใส่ null — ห้ามเดา
+6. field_confidence = ความมั่นใจ 0–1 ของแต่ละฟิลด์ (ภาพเบลอ/ตัวอักษรไม่ชัด/มีหลายวันที่ให้คะแนนต่ำ)
+7. notes = ข้อสังเกตสั้น ๆ ภาษาไทย (เช่น ภาพเอียง, มีหลายวันที่)"""
+
+SUPPORTED_IMAGE = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+# --------------------------------------------------------------------------- Claude engine
+def _claude_client():
+    import anthropic
+
+    return anthropic.Anthropic()
+
+
+def call_claude(**kwargs):
+    """messages.create with server-side refusal fallbacks; plain request if the beta is rejected."""
+    import anthropic
+
+    client = _claude_client()
+    try:
+        return client.beta.messages.create(
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs
+        )
+    except anthropic.BadRequestError:
+        return client.messages.create(**kwargs)
+
+
+def _file_block(path: Path) -> dict:
+    mime = mimetypes.guess_type(path.name)[0] or ""
+    data = base64.standard_b64encode(path.read_bytes()).decode("utf-8")
+    if mime == "application/pdf":
+        return {"type": "document", "source": {"type": "base64", "media_type": mime, "data": data}}
+    if mime == "image/jpg":
+        mime = "image/jpeg"
+    if mime not in SUPPORTED_IMAGE:
+        raise ValueError(f"ไม่รองรับไฟล์ชนิด {mime or path.suffix}")
+    return {"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}}
+
+
+def extract_with_claude(path: Path) -> dict:
+    if path.suffix.lower() == ".txt":
+        content = [{"type": "text", "text": path.read_text(encoding="utf-8")}]
+    else:
+        content = [_file_block(path)]
+    content.append({"type": "text", "text": EXTRACTION_PROMPT})
+    resp = call_claude(
+        model=config.CLAUDE_MODEL,
+        max_tokens=16000,
+        output_config={"effort": config.EXTRACTION_EFFORT,
+                       "format": {"type": "json_schema", "schema": EXTRACTION_SCHEMA}},
+        messages=[{"role": "user", "content": content}],
+    )
+    if resp.stop_reason == "refusal":
+        raise RuntimeError("Claude ปฏิเสธการประมวลผลเอกสารนี้")
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError("คำตอบยาวเกิน max_tokens")
+    text = next(b.text for b in resp.content if b.type == "text")
+    data = json.loads(text)
+    data["engine"] = f"claude:{config.CLAUDE_MODEL}"
+    return data
+
+
+# --------------------------------------------------------------------------- Rule-based engine
+KEYWORDS = [
+    ("WORK_PERMIT", ["ใบอนุญาตทำงาน", "work permit"]),
+    ("VISA", ["visa", "วีซ่า", "ตรวจลงตรา"]),
+    ("DRIVER_LICENSE", ["ใบอนุญาตขับรถ", "ใบขับขี่", "driving licence", "driving license"]),
+    ("COMPULSORY_INSURANCE", ["พ.ร.บ.", "คุ้มครองผู้ประสบภัย", "compulsory"]),
+    ("VEHICLE_TAX", ["ภาษีรถ", "เครื่องหมายแสดงการเสียภาษี", "ป้ายภาษี", "ป้ายวงกลม"]),
+    ("VEHICLE_INSURANCE", ["กรมธรรม์", "ประกันภัยรถยนต์", "policy"]),
+    ("TRANSPORT_LICENSE", ["ใบอนุญาตประกอบการขนส่ง", "การขนส่งทางบก"]),
+    ("CONTRACT", ["สัญญา", "contract", "agreement"]),
+]
+EXPIRY_HINT = re.compile(r"(หมดอายุ|สิ้นสุด|ใช้ได้ถึง|ถึงวันที่|valid until|expir|ครบกำหนด)", re.I)
+ISSUE_HINT = re.compile(r"(วันออก|ออกให้|วันที่ออก|เริ่ม|issue|ตั้งแต่)", re.I)
+NUMBER_RE = re.compile(r"(?:เลขที่|ฉบับที่|No\.?|Number|กรมธรรม์เลขที่)\s*[:：]?\s*([A-Za-z0-9/\-]{4,})", re.I)
+NAME_RE = re.compile(r"(?:ชื่อ(?:ผู้ถือ|ผู้เอาประกัน|ลูกจ้าง)?|Name|ผู้รับใบอนุญาต|คู่สัญญา)\s*[:：]?\s*([^\n:]{3,60})", re.I)
+PLATE_TEXT_RE = re.compile(r"(?:ทะเบียน(?:รถ)?)\s*[:：]?\s*([0-9]{0,2}\s*[ก-ฮ]{0,2}\s*-?\s*[0-9]{1,4}(?:\s+[ก-๙]+)?)")
+
+
+def _read_text(path: Path) -> str:
+    if path.suffix.lower() == ".txt":
+        return path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".pdf":
+        from pypdf import PdfReader
+
+        return "\n".join(p.extract_text() or "" for p in PdfReader(str(path)).pages)
+    return ""
+
+
+def extract_with_rules(path: Path) -> dict:
+    text = _read_text(path)
+    lower = text.lower()
+    doc_type, type_conf = "OTHER", 0.3
+    for t, kws in KEYWORDS:
+        if any(k.lower() in lower for k in kws):
+            doc_type, type_conf = t, 0.8
+            break
+
+    expiry_raw = issue_raw = None
+    for line in text.splitlines():
+        found = find_dates(line)
+        if not found:
+            continue
+        if EXPIRY_HINT.search(line) and not expiry_raw:
+            expiry_raw = found[-1][0]
+            if len(found) >= 2 and not issue_raw:  # "เริ่มต้น <date> สิ้นสุด <date>" on one line
+                issue_raw = found[0][0]
+        elif ISSUE_HINT.search(line) and not issue_raw:
+            issue_raw = found[0][0]
+    all_dates = find_dates(text)
+    exp_conf = 0.75 if expiry_raw else 0.0
+    if not expiry_raw and all_dates:  # guess: latest date in document
+        expiry_raw = max(all_dates, key=lambda x: x[1])[0]
+        exp_conf = 0.4
+
+    num = NUMBER_RE.search(text)
+    name = NAME_RE.search(text)
+    plate = PLATE_TEXT_RE.search(text)
+    return {
+        "doc_type": doc_type,
+        "doc_number": num.group(1).strip() if num else None,
+        "holder_name": name.group(1).strip() if name else None,
+        "vehicle_plate": plate.group(1).strip() if plate else None,
+        "issuing_authority": None,
+        "issue_date_raw": issue_raw,
+        "expiry_date_raw": expiry_raw,
+        "year_system": "UNKNOWN",
+        "field_confidence": {
+            "doc_type": type_conf, "expiry_date": exp_conf,
+            "doc_number": 0.7 if num else 0.0, "holder_name": 0.6 if name else 0.0,
+        },
+        "notes": "อ่านด้วยกฎ (ไม่มี API key)" if text else "ไม่มีข้อความในไฟล์ — กรุณากรอกข้อมูลเอง",
+        "engine": "rules",
+    }
+
+
+# --------------------------------------------------------------------------- Pipeline
+def normalise(raw: dict) -> dict:
+    """Parse raw date strings into ``date`` objects and attach validation + confidence."""
+    buddhist = {"BUDDHIST": True, "GREGORIAN": False}.get(raw.get("year_system", ""), None)
+    ex = dict(raw)
+    ex["issue_date"] = parse_date(raw.get("issue_date_raw"), buddhist)
+    ex["expiry_date"] = parse_date(raw.get("expiry_date_raw"), buddhist)
+    if raw.get("expiry_date_raw") and not ex["expiry_date"]:
+        ex.setdefault("field_confidence", {})["expiry_date"] = 0.0
+    ex["problems"] = validator.validate(ex)
+    ex["confidence"] = validator.score(ex, ex["problems"])
+    ex["needs_review"] = validator.needs_review(ex["confidence"], ex["problems"])
+    return ex
+
+
+def extract(path: Path, engine: str = "auto") -> dict:
+    """Run extraction on a file. engine: 'auto' | 'claude' | 'rules'."""
+    if engine == "auto":
+        engine = "claude" if config.has_claude_credentials() else "rules"
+    raw = extract_with_claude(path) if engine == "claude" else extract_with_rules(path)
+    return normalise(raw)

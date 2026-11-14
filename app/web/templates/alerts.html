@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>การแจ้งเตือน</h1>
+<p class="sub">ระบบตรวจเอกสารทุกวันและแจ้งเตือนล่วงหน้า {{ thresholds[:-1]|join(' / ') }} วัน และในวันที่หมดอายุ — แต่ละรอบส่งครั้งเดียว ไม่ซ้ำ</p>
+
+<div class="grid two">
+  <div class="card">
+    <h2>ตรวจและส่งแจ้งเตือน</h2>
+    <p class="small">ช่องทางที่ใช้งาน: {% for c in channels %}<span class="pill VALID">{{ c }}</span> {% endfor %}</p>
+    {% if channels == ['outbox'] %}
+      <p class="small muted">ยังไม่ได้ตั้งค่า Email / Discord / LINE ใน <code>.env</code> — ข้อความจะถูกเขียนลงไฟล์ outbox แทน (เหมาะกับการเดโม)</p>
+    {% endif %}
+    <form method="post" class="actions">
+      <button class="btn" name="action" value="run">🔔 ตรวจและส่งแจ้งเตือนตอนนี้</button>
+      <button class="btn ghost" name="action" value="test">ส่งข้อความทดสอบ</button>
+    </form>
+    <p class="small muted" style="margin-top:12px">ขณะที่แอปเปิดอยู่ ระบบจะตรวจอัตโนมัติทุก 24 ชั่วโมง</p>
+  </div>
+  <div class="card">
+    <h2>Outbox วันนี้</h2>
+    {% if outbox %}<div class="mono">{{ outbox|join('\n') }}</div>
+    {% else %}<p class="muted small">ยังไม่มีข้อความ</p>{% endif %}
+    <p class="small muted">{{ outbox_path }}</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:18px">
+  <h2>ประวัติการแจ้งเตือน</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>เวลา</th><th>รอบ</th><th>เอกสาร</th><th>ข้อความ</th><th>ช่องทาง</th></tr></thead>
+    <tbody>
+    {% for n in log %}
+      <tr><td class="small">{{ n.sent_at.replace('T',' ') }}</td>
+        <td>{{ 'วันหมดอายุ' if n.threshold_days == 0 else n.threshold_days ~ ' วัน' }}</td>
+        <td>{{ doc_label(n.doc_type) }}<br><span class="small muted">{{ n.owner_name }}</span></td>
+        <td class="small">{{ n.message }}</td><td class="small">{{ n.channel }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">ยังไม่มีการแจ้งเตือน — กดปุ่ม "ตรวจและส่งแจ้งเตือนตอนนี้"</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>ข้อมูลตัวอย่าง</h2>
+  <form method="post" onsubmit="return confirm('ลบข้อมูลทั้งหมดและสร้างข้อมูลตัวอย่างใหม่?')">
+    <button class="btn danger sm" name="action" value="reset_demo">รีเซ็ตเป็นข้อมูลตัวอย่าง</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_macros.html" import conf with context %}
+{% block content %}
+<h1>คิวตรวจทาน (Human-in-the-loop)</h1>
+<p class="sub">เอกสารที่ AI ไม่มั่นใจหรือไม่ผ่านกฎตรวจสอบ — ตรวจและยืนยันก่อนเข้าระบบแจ้งเตือน</p>
+<div class="card tbl-wrap">
+<table>
+  <thead><tr><th>#</th><th>ประเภท</th><th>ผู้ถือ</th><th>วันหมดอายุที่อ่านได้</th><th>ความมั่นใจ</th><th></th></tr></thead>
+  <tbody>
+  {% for d in docs %}
+    <tr><td>{{ d.id }}</td><td>{{ doc_label(d.doc_type) }}</td><td>{{ d.owner_name }}</td>
+      <td>{{ d.expiry_date|thai }}</td><td>{{ conf(d.confidence) }}</td>
+      <td><a class="btn sm" href="{{ url_for('document_detail', doc_id=d.id) }}">ตรวจทาน</a></td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">ไม่มีเอกสารรอตรวจ ✅</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
