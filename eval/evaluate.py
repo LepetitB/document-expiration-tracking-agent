@@ -44,7 +44,8 @@ def main() -> None:
             "doc_type": ex.get("doc_type") == t["doc_type"],
             "expiry_date": str(ex.get("expiry_date")) == t["expiry_date"],
             "doc_number": _norm(t["doc_number"]) in _norm(ex.get("doc_number")),
-            "plate": _norm(t["plate"]) in _norm(plate),
+            "plate": (_norm(t["plate"]) in _norm(plate)) if "plate" in t
+                     else (_norm(t["holder"]) in _norm(ex.get("holder_name"))),
         }
         for k, v in ok.items():
             score[k] += v
@@ -59,7 +60,7 @@ def main() -> None:
     lines += [f"| {k} | {v}/{len(rows)} ({v / n:.0%}) |" for k, v in score.items()]
     lines += ["", f"- Sent to human review: {sent_to_review}/{len(rows)}",
               f"- **False-confident** (wrong but auto-confirmed): {false_confident}/{len(rows)}", "",
-              "| File | type | expiry | number | plate | extracted expiry | confidence |", "|---|---|---|---|---|---|---|"]
+              "| File | type | expiry | number | plate/driver | extracted expiry | confidence |", "|---|---|---|---|---|---|---|"]
     mark = lambda b: "✅" if b else "❌"
     for name, ok, ex in rows:
         lines.append(f"| {name} | {mark(ok['doc_type'])} | {mark(ok['expiry_date'])} | {mark(ok['doc_number'])} | "

@@ -35,8 +35,8 @@ EXTRACTION_SCHEMA = {
         "year_system": {"type": "string", "enum": ["BUDDHIST", "GREGORIAN", "UNKNOWN"]},
         "field_confidence": {
             "type": "object",
-            "properties": {k: {"type": "number"} for k in validator.KEY_FIELDS},
-            "required": list(validator.KEY_FIELDS),
+            "properties": {k: {"type": "number"} for k in (*validator.KEY_FIELDS, "holder_name")},
+            "required": [*validator.KEY_FIELDS, "holder_name"],
             "additionalProperties": False,
         },
         "notes": {"type": "string"},
@@ -48,17 +48,18 @@ EXTRACTION_SCHEMA = {
 
 DOC_TYPE_GUIDE = "\n".join(f"- {k}: {v[0]}" for k, v in config.DOC_TYPES.items())
 
-EXTRACTION_PROMPT = f"""คุณคือระบบอ่านเอกสารรถของฝ่ายธุรการบริษัทขนส่ง อ่านเอกสารที่แนบมาแล้วดึงข้อมูลตาม schema
+EXTRACTION_PROMPT = f"""คุณคือระบบอ่านเอกสารรถและใบขับขี่ของฝ่ายธุรการบริษัทขนส่ง อ่านเอกสารที่แนบมาแล้วดึงข้อมูลตาม schema
 
 ประเภทเอกสาร (doc_type):
 {DOC_TYPE_GUIDE}
 
 กติกา:
 1. expiry_date_raw = วันหมดอายุ / วันครบกำหนดเสียภาษี / วันสิ้นสุดความคุ้มครอง — คัดลอกข้อความวันที่ตามที่ปรากฏในเอกสารทุกตัวอักษร (เช่น "28 ก.พ. 2570" หรือ "28/02/2027") ห้ามแปลงปีหรือคำนวณเอง
-2. issue_date_raw = วันออกเอกสาร / วันเริ่มคุ้มครอง (คัดลอกตามจริงเช่นกัน) — อย่าสับสนกับวันจดทะเบียนรถ
+2. issue_date_raw = วันออกเอกสาร / วันเริ่มคุ้มครอง (คัดลอกตามจริงเช่นกัน) — อย่าสับสนกับวันจดทะเบียนรถหรือวันเกิด
 3. year_system = BUDDHIST ถ้าปีในเอกสารเป็น พ.ศ., GREGORIAN ถ้าเป็น ค.ศ.
-4. vehicle_plate = ทะเบียนรถพร้อมจังหวัด (เช่น "70-1234 ชลบุรี"); holder_name = ชื่อผู้เอาประกัน/เจ้าของรถ
-5. ถ้าเอกสารไม่ใช่เอกสารรถ ให้ใช้ doc_type = OTHER และอธิบายใน notes
+4. เอกสารรถ: vehicle_plate = ทะเบียนรถพร้อมจังหวัด (เช่น "70-1234 ชลบุรี"), holder_name = ชื่อผู้เอาประกัน/เจ้าของรถ
+   ใบขับขี่ (DRIVER_LICENSE): holder_name = ชื่อ-สกุลคนขับ, vehicle_plate = null
+5. ถ้าเอกสารไม่ใช่เอกสารรถหรือใบขับขี่ ให้ใช้ doc_type = OTHER และอธิบายใน notes
 6. ถ้าไม่พบฟิลด์ใดให้ใส่ null — ห้ามเดา
 7. field_confidence = ความมั่นใจ 0–1 ของแต่ละฟิลด์ (ภาพเบลอ/ตัวอักษรไม่ชัด/มีหลายวันที่ให้คะแนนต่ำ)
 8. notes = ข้อสังเกตสั้น ๆ ภาษาไทย (เช่น ภาพเอียง, มีหลายวันที่)"""
@@ -123,6 +124,7 @@ def extract_with_claude(path: Path) -> dict:
 
 # --------------------------------------------------------------------------- Rule-based engine
 KEYWORDS = [
+    ("DRIVER_LICENSE", ["ใบอนุญาตขับรถ", "ใบขับขี่", "driving licence", "driving license"]),
     ("COMPULSORY_INSURANCE", ["พ.ร.บ.", "คุ้มครองผู้ประสบภัย", "compulsory"]),
     ("VEHICLE_TAX", ["ภาษีรถ", "เครื่องหมายแสดงการเสียภาษี", "ป้ายภาษี", "ป้ายวงกลม"]),
     ("VEHICLE_INSURANCE", ["กรมธรรม์", "ประกันภัยรถ", "policy", "motor insurance"]),
@@ -187,6 +189,7 @@ def extract_with_rules(path: Path) -> dict:
         "field_confidence": {
             "doc_type": type_conf, "expiry_date": exp_conf,
             "doc_number": 0.7 if num else 0.0, "vehicle_plate": 0.6 if plate else 0.0,
+            "holder_name": 0.6 if name else 0.0,
         },
         "notes": "อ่านด้วยกฎ (ไม่มี API key)" if text else "ไม่มีข้อความในไฟล์ — กรุณากรอกข้อมูลเอง",
         "engine": "rules",
@@ -202,7 +205,7 @@ def normalise(raw: dict) -> dict:
     ex["expiry_date"] = parse_date(raw.get("expiry_date_raw"), buddhist)
     if raw.get("expiry_date_raw") and not ex["expiry_date"]:
         ex.setdefault("field_confidence", {})["expiry_date"] = 0.0
-    ex["problems"] = validator.validate(ex)
+    ex["problems"] = validator.validate(ex) + validator.cross_check(ex)
     ex["confidence"] = validator.score(ex, ex["problems"])
     ex["needs_review"] = validator.needs_review(ex["confidence"], ex["problems"])
     return ex

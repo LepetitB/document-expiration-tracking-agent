@@ -68,13 +68,32 @@ def test_vehicle_matrix_readiness(client):
     assert rows["71-0099 ระยอง"] == "NO_DRIVE"   # พ.ร.บ. expired
     assert rows["70-8821 ชลบุรี"] == "NO_DRIVE"   # tax expired
     assert rows["72-0157 ฉะเชิงเทรา"] == "RISK"   # insurance expired
-    assert rows["72-4410 ชลบุรี"] == "READY"
+    assert rows["72-4410 ชลบุรี"] == "NO_DRIVE"   # assigned driver's licence expired
+    assert rows["71-5530 ระยอง"] == "READY"
+
+
+def test_driver_licence_upload_links_to_driver(client):
+    data = (SAMPLES / "08_driver_license_surachai.txt").read_bytes()
+    client.post("/upload", data={"engine": "rules", "files": (io.BytesIO(data), "licence.txt")},
+                content_type="multipart/form-data")
+    doc = db.list_documents(review_status="PENDING_REVIEW")[0]
+    assert doc["doc_type"] == "DRIVER_LICENSE"
+    assert doc["owner_type"] == "DRIVER" and doc["owner_name"] == "นายสุรชัย พึ่งบุญ"  # existing driver
 
 
 def test_alerts_sent_once(client):
     first = run_expiry_check()
     assert first, "seed data contains expiring documents"
     assert run_expiry_check() == []
+
+
+def test_line_alerts_reach_the_right_drivers(client):
+    sent = run_expiry_check()
+    to_driver = {c for s in sent for c in s["channels"] if c.startswith("LINE")}
+    assert "LINE(จำลอง)→นายมานพ ศรีสุข" in to_driver        # own licence expired
+    assert "LINE(จำลอง)→นายประสิทธิ์ แก้วกล้า" in to_driver  # drives 71-0099 whose พ.ร.บ. expired
+    # 72-0157: only its insurance expired -> admin only, its driver is not messaged about the vehicle
+    assert not any("72-0157" in s["message"] and "ถึงคนขับ" in s["message"] for s in sent)
 
 
 def test_chat_api_offline(client):
@@ -85,3 +104,15 @@ def test_chat_api_offline(client):
     assert "70-1234" in answer
     answer, _ = chat_offline("รถคันไหนห้ามออกวิ่งบ้าง")
     assert "71-0099" in answer and "70-8821" in answer and "72-0157" not in answer
+    assert "มานพ" in answer  # expired driver's licence also blocks a vehicle
+
+
+def test_master_data_cross_check(client):
+    from app.core import validator
+
+    typo = validator.cross_check({"doc_type": "DRIVER_LICENSE", "holder_name": "นายสุรชัย พึงบุญ"})
+    assert typo and "นายสุรชัย พึ่งบุญ" in typo[0]  # suggests the registered spelling
+    assert validator.cross_check({"doc_type": "DRIVER_LICENSE",
+                                  "holder_name": "Mr. Boonlert Jaingam / นายบุญเลิศ ใจงาม"}) == []
+    assert validator.cross_check({"doc_type": "VEHICLE_TAX", "vehicle_plate": "70-1234 ชลบุรี"}) == []
+    assert validator.cross_check({"doc_type": "VEHICLE_TAX", "vehicle_plate": "99-9999 ตาก"})

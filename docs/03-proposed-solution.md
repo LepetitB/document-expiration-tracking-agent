@@ -12,7 +12,9 @@
 | (จุดอ่อนของ LLM) มั่นใจแต่ผิด | **confidence score + human-in-the-loop**: ต่ำกว่า 85% หรือผิดกฎ ให้ส่งคนตรวจ | `validator.py`, หน้า "ตรวจทาน" | **false-confident rate** (ผิดแต่ผ่านอัตโนมัติ) ต้องเป็น 0 |
 | 4. ไม่มีการเตือนเชิงรุก | ตัวตรวจรายวัน + เตือน 90/60/30/7/0 วัน ไม่ส่งซ้ำ ส่ง Email/LINE/Discord | `notifier.py`, `run.py` | จำลองย้อนหลัง: 0 missed alerts |
 | 5. ความรู้อยู่กับคนคนเดียว | ฐานข้อมูลกลาง + Dashboard ที่ใครก็เปิดดูได้ + ผูกเอกสารกับรถด้วยทะเบียน | `database.py`, Dashboard | — |
-| 6a. ไม่รู้ว่ารถคันไหนวิ่งได้ | **ตารางสถานะรายคัน**: ⛔ ห้ามออกวิ่ง (ภาษี/พ.ร.บ. หมด) · ⚠️ ต้องรีบต่อ · ✅ พร้อมวิ่ง | `server.py` (`vehicle_matrix`), Dashboard | test `vehicle_matrix_readiness` |
+| 6b. คนขับไม่รู้ข้อมูล | **ส่ง LINE ถึงคนขับ** เฉพาะเรื่องที่เกี่ยวกับตัวเอง: ใบขับขี่ของตัวเองใกล้หมด / รถที่ตัวเองขับห้ามออกวิ่ง (จำลองการส่งในเดโม, ส่งจริงได้เมื่อใส่ `LINE_CHANNEL_TOKEN`) | `notifier.py` (`driver_alert`, `send_line_to_driver`) | test `line_alerts_reach_the_right_drivers` |
+| (AI อ่านชื่อผิดแต่มั่นใจ) | **เทียบกับข้อมูลหลัก (master data)**: ชื่อคนขับ/ทะเบียนที่อ่านได้ต้องตรงกับที่มีในระบบ ไม่ตรง → ส่งคนตรวจ พร้อมแนะนำชื่อที่ใกล้เคียง | `validator.py` (`cross_check`) | false-confident 1 → 0 (ดู 05-results) |
+| 6a. ไม่รู้ว่ารถคันไหนวิ่งได้ | **ตารางสถานะรายคัน**: ⛔ ห้ามออกวิ่ง (ภาษี/พ.ร.บ./ใบขับขี่คนขับ หมด) · ⚠️ ต้องรีบต่อ · ✅ พร้อมวิ่ง | `server.py` (`vehicle_matrix`), Dashboard | test `vehicle_matrix_readiness` |
 | 6. ตอบคำถามง่าย ๆ ไม่ได้ | **Agent** ถามภาษาไทย เรียก tools ค้น DB จริง | `app/agent/` | ตอบถูกจากชุดคำถามทดสอบ |
 | (ต่ออายุแล้วยังเตือน) | อัปโหลดฉบับใหม่ ระบบจะ mark ฉบับเก่าว่า "ต่ออายุแล้ว" อัตโนมัติ | `database.py` | test `renewal_supersedes` |
 
@@ -104,12 +106,13 @@ document-expiration-tracking-agent/
 ## 3. Data Model
 
 ```
-Owner (= รถ 1 คัน)
-  id, type [VEHICLE], name ("70-1234 ชลบุรี"), identifier ("70-1234"),
+Owner (= รถ 1 คัน หรือ คนขับ 1 คน)
+  id, type [VEHICLE | DRIVER], name ("70-1234 ชลบุรี" / "นายสมชาย ใจดี"), identifier,
+  driver_id → Owner (คนขับประจำรถ, เฉพาะ VEHICLE), phone, line_user_id (เฉพาะ DRIVER),
   contact_email, responsible_person
 
 Document
-  id, owner_id → Owner, doc_type [VEHICLE_TAX | COMPULSORY_INSURANCE | VEHICLE_INSURANCE | OTHER],
+  id, owner_id → Owner, doc_type [VEHICLE_TAX | COMPULSORY_INSURANCE | VEHICLE_INSURANCE | DRIVER_LICENSE | OTHER],
   doc_number, holder_name (ผู้เอาประกัน),
   issue_date, expiry_date (ค.ศ., ISO-8601), issuing_authority,
   file_path, raw_extraction (JSON), confidence (0–1),
@@ -128,7 +131,15 @@ Notification
 - `RENEWED` : เมื่ออัปโหลดฉบับใหม่ของรถคันเดิม + ประเภทเดิม → ฉบับเก่าเลิกเตือน
 
 **กฎสถานะรายคัน**
-- ⛔ `NO_DRIVE`: ภาษีรถ หรือ พ.ร.บ. หมดอายุ/ไม่มีข้อมูล (นำรถออกวิ่งผิดกฎหมาย)
+- ⛔ `NO_DRIVE`: ภาษีรถ, พ.ร.บ. หรือใบขับขี่ของคนขับประจำรถ หมดอายุ/ไม่มีข้อมูล (นำรถออกวิ่งผิดกฎหมาย)
+
+**ใครได้รับแจ้งเตือน**
+| เหตุการณ์ | ธุรการ | คนขับ (LINE) |
+|----------|:-----:|:-----------:|
+| เอกสารรถใกล้หมด (90/60/30/7 วัน) | ✅ | — |
+| ภาษี/พ.ร.บ. หมดแล้ว → รถห้ามวิ่ง | ✅ | ✅ คนขับประจำรถคันนั้น |
+| ประกันภัยหมด | ✅ | — |
+| ใบขับขี่ใกล้หมด / หมดแล้ว | ✅ | ✅ เจ้าของใบขับขี่ |
 - ⚠️ `RISK`: ประกันภัยหมดอายุ/ไม่มี หรือมีเอกสารใดจะหมดภายใน 30 วัน
 - ✅ `READY`: เอกสารครบและยังไม่ใกล้หมด
 
@@ -178,7 +189,7 @@ Agent ใช้ Claude แบบ **tool use** — LLM ไม่ตอบจา�
 |------|-------|----------|
 | `search_documents` | query (ทะเบียน/เลขที่), doc_type, status | "หากรมธรรม์เลข POL-V1-554021" |
 | `list_expiring` | within_days | "30 วันข้างหน้ามีอะไรต้องต่อบ้าง", "รถคันไหนห้ามออกวิ่ง" |
-| `get_owner_summary` | ทะเบียนรถ | "รถ 70-1234 สถานะเป็นยังไง" |
+| `get_owner_summary` | ทะเบียนรถ / ชื่อคนขับ | "รถ 70-1234 สถานะเป็นยังไง" (ตอบรวมคนขับประจำรถและใบขับขี่) |
 | `get_stats` | — | "ตอนนี้มีเอกสารหมดอายุกี่ฉบับ" |
 | `draft_reminder` | document_id, tone | "ร่างข้อความเตือนเรื่อง พ.ร.บ. รถ 71-0099" |
 
@@ -216,9 +227,9 @@ Agent ใช้ Claude แบบ **tool use** — LLM ไม่ตอบจา�
 
 | MVP (ต้องมี) | Stretch (ถ้ามีเวลา) |
 |-------------|-------------------|
-| Upload + extraction เอกสารรถ 3 ประเภท | ดึงไฟล์แนบจาก Gmail อัตโนมัติ |
+| Upload + extraction เอกสารรถ 3 ประเภท + ใบขับขี่ | ดึงไฟล์แนบจาก Gmail อัตโนมัติ |
 | พ.ศ.→ค.ศ. + validation + review | LINE bot ให้ส่งรูปเอกสารเข้าระบบได้ |
-| Dashboard + สถานะรายคัน | ขยายไปเอกสารคนขับ (ใบขับขี่) / ตรวจสภาพรถ |
+| Dashboard + สถานะรายคัน (รวมคนขับ) | LINE OA ส่งจริง + ให้คนขับส่งรูปใบขับขี่ใหม่กลับทาง LINE / ตรวจสภาพรถ |
 | แจ้งเตือนอีเมล/Discord หรือ LINE | ประเมินค่าใช้จ่ายต่ออายุ/งบประมาณรายเดือน |
 | Agent chat 4–5 tools | Deploy ขึ้น cloud (เช่น Render) |
 | Evaluation script + ผลลัพธ์ | |

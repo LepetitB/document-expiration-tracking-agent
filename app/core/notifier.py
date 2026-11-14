@@ -1,4 +1,7 @@
-"""Daily expiry check + notification delivery (email / Discord / LINE / local outbox)."""
+"""Daily expiry check + notification delivery.
+
+Admin team: email / Discord / LINE group / local outbox.  Drivers: LINE (real or simulated), see driver_alert().
+"""
 from __future__ import annotations
 
 import json
@@ -14,13 +17,63 @@ from app.db import database as db
 from app.extraction.thai_date import to_thai
 
 
+def _when(left: int) -> str:
+    return "หมดอายุแล้ว" if left < 0 else ("หมดอายุวันนี้" if left == 0 else f"จะหมดอายุในอีก {left} วัน")
+
+
 def build_message(doc: dict) -> str:
-    left = doc["days_left"]
-    when = "หมดอายุแล้ว" if left < 0 else ("หมดอายุวันนี้" if left == 0 else f"จะหมดอายุในอีก {left} วัน")
-    plate = doc.get("owner_name") or "-"
-    return (f"⚠️ {doc_label(doc['doc_type'])} รถทะเบียน {plate} {when} "
+    """Message for the admin team."""
+    whose = (f"ของคนขับ {doc.get('owner_name')}" if doc.get("owner_type") == "DRIVER"
+             else f"รถทะเบียน {doc.get('owner_name') or '-'}")
+    return (f"⚠️ {doc_label(doc['doc_type'])} {whose} {_when(doc['days_left'])} "
             f"(วันหมดอายุ {to_thai(date.fromisoformat(doc['expiry_date']))}) "
             f"เลขที่ {doc.get('doc_number') or '-'} — กรุณาดำเนินการต่ออายุ")
+
+
+def driver_alert(doc: dict) -> tuple[dict, str] | None:
+    """Who else must hear about this document via LINE, and what to tell them.
+
+    * the driver's own licence is expiring  -> tell the driver to renew it
+    * the vehicle a driver uses can no longer legally go out (tax / พ.ร.บ. expired) -> tell its driver
+    Insurance and early reminders for vehicle documents stay with the admin team.
+    """
+    exp = to_thai(date.fromisoformat(doc["expiry_date"]))
+    if doc.get("owner_type") == "DRIVER":
+        driver = db.get_owner(doc["owner_id"])
+        if not driver:
+            return None
+        if doc["days_left"] < 0:
+            text = (f"แจ้งคุณ{driver['name'].removeprefix('นาย').removeprefix('นาง')}: ใบขับขี่ของคุณหมดอายุแล้ว ({exp}) "
+                    f"ห้ามขับรถของบริษัทจนกว่าจะต่ออายุ กรุณาติดต่อฝ่ายธุรการ")
+        else:
+            text = (f"แจ้งคุณ{driver['name'].removeprefix('นาย').removeprefix('นาง')}: ใบขับขี่ของคุณ{_when(doc['days_left'])} "
+                    f"({exp}) กรุณาไปต่ออายุที่สำนักงานขนส่ง แล้วส่งรูปใบขับขี่ใหม่ให้ฝ่ายธุรการ")
+        return driver, text
+    if doc["doc_type"] in ("VEHICLE_TAX", "COMPULSORY_INSURANCE") and doc["days_left"] < 0 and doc.get("driver_id"):
+        driver = db.get_owner(doc["driver_id"])
+        if not driver:
+            return None
+        text = (f"⛔ แจ้งคุณ{driver['name'].removeprefix('นาย').removeprefix('นาง')}: รถ {doc['owner_name']} ที่คุณขับ "
+                f"{doc_label(doc['doc_type'])} หมดอายุแล้ว ({exp}) ห้ามนำรถออกวิ่งจนกว่าฝ่ายธุรการจะแจ้งว่าต่อเรียบร้อย")
+        return driver, text
+    return None
+
+
+def send_line_to_driver(driver: dict, text: str) -> str:
+    """Push a LINE message to a driver. Real push needs LINE_CHANNEL_TOKEN + the driver's LINE userId
+    (the driver must add the company LINE OA as a friend); otherwise the message is simulated in the outbox."""
+    if config.LINE_CHANNEL_TOKEN and driver.get("line_user_id", "").startswith("U"):
+        try:
+            _post_json("https://api.line.me/v2/bot/message/push",
+                       {"to": driver["line_user_id"], "messages": [{"type": "text", "text": text}]},
+                       {"Authorization": f"Bearer {config.LINE_CHANNEL_TOKEN}"})
+            return f"LINE→{driver['name']}"
+        except Exception as e:
+            _write_outbox(f"[ส่ง LINE ถึง {driver['name']} ไม่สำเร็จ: {e}] {text}")
+            return f"LINE→{driver['name']} (ไม่สำเร็จ)"
+    contact = driver.get("line_user_id") or driver.get("phone") or "ยังไม่มี LINE"
+    _write_outbox(f"💬 [LINE จำลอง] ถึง {driver['name']} ({contact}): {text}")
+    return f"LINE(จำลอง)→{driver['name']}"
 
 
 def due_threshold(days_left: int) -> int | None:
@@ -96,6 +149,12 @@ def run_expiry_check(today: date | None = None) -> list[dict]:
             continue
         msg = build_message(d)
         channels = deliver(msg)
-        db.log_notification(d["id"], t, ",".join(channels) or "failed", msg)
-        sent.append({"document_id": d["id"], "threshold": t, "message": msg, "channels": channels})
+        logged = msg
+        extra = driver_alert(d)
+        if extra:
+            driver, text = extra
+            channels.append(send_line_to_driver(driver, text))
+            logged += f"\n💬 ถึงคนขับ: {text}"
+        db.log_notification(d["id"], t, ", ".join(channels) or "failed", logged)
+        sent.append({"document_id": d["id"], "threshold": t, "message": logged, "channels": channels})
     return sent

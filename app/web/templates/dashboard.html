@@ -2,7 +2,7 @@
 {% from "_macros.html" import status_pill, days with context %}
 {% block content %}
 <h1>Dashboard เอกสารรถ</h1>
-<p class="sub">ติดตาม ภาษีรถ · พ.ร.บ. · ประกันภัย ของรถทุกคันในบริษัท — รถจะออกวิ่งได้ต้องมีเอกสารที่ยังไม่หมดอายุครบ</p>
+<p class="sub">ติดตาม ภาษีรถ · พ.ร.บ. · ประกันภัย ของรถทุกคัน + ใบขับขี่ของคนขับประจำรถ — รถจะออกวิ่งได้ต้องมีเอกสารที่ยังไม่หมดอายุครบ</p>
 
 <div class="grid stats">
   <div class="card stat"><div class="n">{{ vehicles|length }}</div><div class="l">🚛 รถทั้งหมด (คัน)</div></div>
@@ -23,7 +23,9 @@
         <td><b>{{ v.plate }}</b></td>
         {% for t in MAIN_DOC_TYPES %}
           {% set d = v.docs.get(t) %}
-          <td>{% if d %}<a href="{{ url_for('document_detail', doc_id=d.id) }}" class="cell {{ d.status }}">
+          <td>{% if t == 'DRIVER_LICENSE' %}<div class="small">👷 {{ v.driver.name if v.driver else 'ไม่มีคนขับประจำ' }}</div>{% endif %}
+              {% if t == 'DRIVER_LICENSE' and not v.driver %}<span class="muted small">-</span>
+              {% elif d %}<a href="{{ url_for('document_detail', doc_id=d.id) }}" class="cell {{ d.status }}">
                 {{ STATUS_ICON[d.status] }} {{ d.expiry_date|thai }}<br><span class="small">{{ days(d) }}</span></a>
               {% else %}<span class="cell EXPIRED">❌ ไม่มีข้อมูล</span>{% endif %}</td>
         {% endfor %}
@@ -37,7 +39,7 @@
     </tbody>
   </table>
   </div>
-  <p class="small muted" style="margin:10px 0 0">⛔ ภาษีรถหรือ พ.ร.บ. หมดอายุ = ผิดกฎหมายถ้านำรถออกวิ่ง · ⚠️ ประกันภัยหมด หรือมีเอกสารจะหมดภายใน 30 วัน</p>
+  <p class="small muted" style="margin:10px 0 0">⛔ ภาษีรถ / พ.ร.บ. / ใบขับขี่คนขับ หมดอายุ = ผิดกฎหมายถ้านำรถออกวิ่ง · ⚠️ ประกันภัยหมด หรือมีเอกสารจะหมดภายใน 30 วัน</p>
 </div>
 
 <div class="grid two">
@@ -59,7 +61,7 @@
     <ul class="plain urgent">
       {% for d in urgent %}
       <li><span><a href="{{ url_for('document_detail', doc_id=d.id) }}">{{ doc_label(d.doc_type) }}</a><br>
-        <span class="small muted">🚛 {{ d.owner_name }}</span></span>
+        <span class="small muted">{{ "👷" if d.owner_type == "DRIVER" else "🚛" }} {{ d.owner_name }}</span></span>
         <span style="text-align:right">{{ days(d) }}<br><span class="small muted">{{ d.expiry_date|thai }}</span></span></li>
       {% endfor %}
     </ul>
@@ -70,7 +72,7 @@
 <div class="card">
   <h2>เอกสารทั้งหมด ({{ total }} ฉบับ)</h2>
   <form class="filters" method="get">
-    <input name="q" value="{{ q }}" placeholder="ค้นหา ทะเบียนรถ / เลขที่เอกสาร" style="min-width:240px">
+    <input name="q" value="{{ q }}" placeholder="ค้นหา ทะเบียนรถ / ชื่อคนขับ / เลขที่" style="min-width:240px">
     <select name="status">
       <option value="">ทุกสถานะ</option>
       {% for k in ['EXPIRED','EXPIRING','VALID','PENDING_REVIEW','UNKNOWN'] %}
@@ -85,12 +87,12 @@
   </form>
   <div class="tbl-wrap">
   <table>
-    <thead><tr><th>สถานะ</th><th>ทะเบียนรถ</th><th>ประเภทเอกสาร</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
+    <thead><tr><th>สถานะ</th><th>รถ / คนขับ</th><th>ประเภทเอกสาร</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
     <tbody>
     {% for d in docs %}
       <tr>
         <td>{{ status_pill(d.status) }}</td>
-        <td><b>{{ d.owner_name }}</b></td>
+        <td><b>{{ "👷 " if d.owner_type == "DRIVER" }}{{ d.owner_name }}</b></td>
         <td>{{ doc_label(d.doc_type) }}</td>
         <td class="small">{{ d.doc_number or '-' }}</td>
         <td>{{ d.expiry_date|thai }}</td>

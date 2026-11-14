@@ -90,6 +90,29 @@ Period of insurance: from 4 Dec 2025 to 4 Dec 2026""",
 วันที่ออกกรมธรรม์ 20 ธ.ค. 2568
 คุ้มครอง 29 ธ.ค. 2568 - 29 ธ.ค. 2569 (เวลา 16.30 น.)""",
     },
+    {
+        "file": "08_driver_license_surachai",
+        "truth": {"doc_type": "DRIVER_LICENSE", "doc_number": "64012345", "expiry_date": "2026-12-02",
+                  "holder": "สุรชัย พึ่งบุญ"},
+        "text": """ใบอนุญาตขับรถยนต์ส่วนบุคคล ชนิดที่ 2 (ท.2)
+กรมการขนส่งทางบก
+ฉบับที่ 64012345
+ชื่อ นายสุรชัย พึ่งบุญ
+เกิดวันที่ 3 มีนาคม 2525
+วันอนุญาต 2 ธันวาคม 2564
+วันสิ้นอายุ 2 ธันวาคม 2569""",
+    },
+    {
+        "file": "09_driver_license_boonlert",
+        "truth": {"doc_type": "DRIVER_LICENSE", "doc_number": "63098712", "expiry_date": "2027-07-09",
+                  "holder": "บุญเลิศ ใจงาม"},
+        "text": """DRIVING LICENCE / ใบอนุญาตขับรถ ท.3
+No. 63098712
+Name: Mr. Boonlert Jaingam / นายบุญเลิศ ใจงาม
+Date of Birth 12 Aug 1985
+Issue Date 9 Jul 2022
+Expiry Date 9 Jul 2027""",
+    },
 ]
 
 

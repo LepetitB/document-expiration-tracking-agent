@@ -41,7 +41,11 @@
       </select>
     </div>
     {{ row('ทะเบียนรถ (เช่น 70-1234 ชลบุรี)', 'vehicle_plate', raw.get('vehicle_plate') or (doc.owner_name if doc else ''), fc.get('vehicle_plate'), hl=pending) }}
-    {{ row('ชื่อผู้เอาประกัน / เจ้าของรถ', 'holder_name', doc.holder_name if doc else '') }}
+    {{ row('ชื่อผู้เอาประกัน / ชื่อคนขับ (ใบขับขี่)', 'holder_name', doc.holder_name if doc else '', fc.get('holder_name') if doc and doc.doc_type == 'DRIVER_LICENSE' else None, hl=pending) }}
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
+      {{ row('เบอร์โทรคนขับ (เฉพาะใบขับขี่)', 'driver_phone', doc.owner_phone if doc else '', None, 'tel') }}
+      {{ row('LINE userId คนขับ (เฉพาะใบขับขี่)', 'driver_line', doc.owner_line if doc else '') }}
+    </div>
     {{ row('เลขที่เอกสาร', 'doc_number', doc.doc_number if doc else '', fc.get('doc_number'), hl=pending) }}
     <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
       {{ row('วันออกเอกสาร (ค.ศ.)', 'issue_date', doc.issue_date if doc else '', None, 'date') }}

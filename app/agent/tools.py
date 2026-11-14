@@ -15,6 +15,7 @@ def _brief(d: dict) -> dict:
         "id": d["id"],
         "doc_type": doc_label(d["doc_type"]),
         "owner": d.get("owner_name"),
+        "owner_type": OWNER_TYPES.get(d.get("owner_type"), ""),
         "owner_identifier": d.get("owner_identifier"),
         "doc_number": d.get("doc_number"),
         "expiry_date": to_thai(date.fromisoformat(d["expiry_date"])) if d.get("expiry_date") else None,
@@ -59,10 +60,21 @@ def get_owner_summary(identifier: str) -> dict:
     docs = [d for d in _active()
             if ident in (d.get("owner_identifier") or "").lower() or ident in (d.get("owner_name") or "").lower()]
     if not docs:
-        return {"found": False, "message": f"ไม่พบรถทะเบียน '{identifier}'"}
-    return {"found": True, "owner": docs[0]["owner_name"],
-            "owner_type": OWNER_TYPES.get(docs[0]["owner_type"], ""),
-            "documents": [_brief(d) for d in docs]}
+        return {"found": False, "message": f"ไม่พบรถหรือคนขับ '{identifier}'"}
+    owner_id = docs[0]["owner_id"]
+    docs = [d for d in docs if d["owner_id"] == owner_id]
+    result = {"found": True, "owner": docs[0]["owner_name"],
+              "owner_type": OWNER_TYPES.get(docs[0]["owner_type"], ""),
+              "documents": [_brief(d) for d in docs]}
+    owner = db.get_owner(owner_id) or {}
+    if owner.get("owner_type") == "VEHICLE":
+        driver = db.get_owner(owner["driver_id"]) if owner.get("driver_id") else None
+        result["driver"] = driver["name"] if driver else "ไม่มีคนขับประจำ"
+        if driver:
+            result["driver_license"] = [_brief(d) for d in _active() if d["owner_id"] == driver["id"]]
+    elif owner.get("owner_type") == "DRIVER":
+        result["vehicles"] = [v["name"] for v in db.vehicles_of_driver(owner_id)]
+    return result
 
 
 def get_stats() -> dict:
@@ -92,7 +104,7 @@ TOOLS = {
 TOOL_SCHEMAS = [
     {
         "name": "search_documents",
-        "description": "ค้นหาเอกสารตามทะเบียนรถหรือเลขที่เอกสาร กรองตามประเภท/สถานะได้",
+        "description": "ค้นหาเอกสารตามทะเบียนรถ ชื่อคนขับ หรือเลขที่เอกสาร กรองตามประเภท/สถานะได้",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -117,7 +129,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "get_owner_summary",
-        "description": "สรุปเอกสารทั้งหมด (ภาษี/พ.ร.บ./ประกัน) ของรถหนึ่งคัน ค้นด้วยทะเบียนรถ เช่น 70-1234",
+        "description": "สรุปเอกสารของรถหนึ่งคัน (ภาษี/พ.ร.บ./ประกัน + คนขับประจำและใบขับขี่) ค้นด้วยทะเบียน เช่น 70-1234 หรือสรุปของคนขับหนึ่งคน ค้นด้วยชื่อ",
         "input_schema": {
             "type": "object",
             "properties": {"identifier": {"type": "string"}},

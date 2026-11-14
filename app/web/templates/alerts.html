@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>การแจ้งเตือน</h1>
-<p class="sub">ระบบตรวจเอกสารทุกวันและแจ้งเตือนล่วงหน้า {{ thresholds[:-1]|join(' / ') }} วัน และในวันที่หมดอายุ — แต่ละรอบส่งครั้งเดียว ไม่ซ้ำ</p>
+<p class="sub">ระบบตรวจเอกสารทุกวันและแจ้งเตือนล่วงหน้า {{ thresholds[:-1]|join(' / ') }} วัน และในวันที่หมดอายุ — แต่ละรอบส่งครั้งเดียว ไม่ซ้ำ<br>💬 <b>ส่ง LINE ถึงคนขับ</b> เมื่อใบขับขี่ของตัวเองใกล้หมด หรือเมื่อรถที่ตัวเองขับห้ามออกวิ่ง (ภาษี/พ.ร.บ. หมด){% if not line_real %} · <i>ตอนนี้เป็นการจำลอง (ยังไม่ได้ตั้ง LINE_CHANNEL_TOKEN)</i>{% endif %}</p>
 
 <div class="grid two">
   <div class="card">
@@ -33,8 +33,8 @@
     {% for n in log %}
       <tr><td class="small">{{ n.sent_at.replace('T',' ') }}</td>
         <td>{{ 'วันหมดอายุ' if n.threshold_days == 0 else n.threshold_days ~ ' วัน' }}</td>
-        <td>{{ doc_label(n.doc_type) }}<br><span class="small muted">🚛 {{ n.owner_name }}</span></td>
-        <td class="small">{{ n.message }}</td><td class="small">{{ n.channel }}</td></tr>
+        <td>{{ doc_label(n.doc_type) }}<br><span class="small muted">{{ n.owner_name }}</span></td>
+        <td class="small" style="white-space:pre-line">{{ n.message }}</td><td class="small">{{ n.channel }}</td></tr>
     {% else %}
       <tr><td colspan="5" class="muted">ยังไม่มีการแจ้งเตือน — กดปุ่ม "ตรวจและส่งแจ้งเตือนตอนนี้"</td></tr>
     {% endfor %}

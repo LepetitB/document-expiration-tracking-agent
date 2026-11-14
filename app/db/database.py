@@ -65,6 +65,32 @@ def connect() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as c:
         c.executescript(SCHEMA)
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(owners)")}
+        for col, typ in (("phone", "TEXT"), ("line_user_id", "TEXT"), ("driver_id", "INTEGER")):
+            if col not in cols:  # migrate databases created before drivers existed
+                c.execute(f"ALTER TABLE owners ADD COLUMN {col} {typ}")
+
+
+def set_driver_contact(driver_id: int, phone: str | None = None, line_user_id: str | None = None) -> None:
+    with connect() as c:
+        c.execute("UPDATE owners SET phone=COALESCE(?, phone), line_user_id=COALESCE(?, line_user_id) WHERE id=?",
+                  (phone or None, line_user_id or None, driver_id))
+
+
+def assign_driver(vehicle_id: int, driver_id: int | None) -> None:
+    with connect() as c:
+        c.execute("UPDATE owners SET driver_id=? WHERE id=?", (driver_id, vehicle_id))
+
+
+def get_owner(owner_id: int) -> dict | None:
+    with connect() as c:
+        r = c.execute("SELECT * FROM owners WHERE id=?", (owner_id,)).fetchone()
+        return dict(r) if r else None
+
+
+def vehicles_of_driver(driver_id: int) -> list[dict]:
+    with connect() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM owners WHERE driver_id=?", (driver_id,))]
 
 
 def _now() -> str:
@@ -182,7 +208,8 @@ def get_document(doc_id: int) -> dict | None:
 
 _DOC_SELECT = """
 SELECT d.*, o.name AS owner_name, o.owner_type, o.identifier AS owner_identifier,
-       o.contact_email AS owner_email, o.responsible_person
+       o.contact_email AS owner_email, o.responsible_person, o.phone AS owner_phone,
+       o.line_user_id AS owner_line, o.driver_id
 FROM documents d LEFT JOIN owners o ON o.id = d.owner_id
 """
 

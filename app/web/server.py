@@ -76,28 +76,46 @@ def dashboard():
     vcount = Counter(v["readiness"] for v in vehicles)
     return render_template("dashboard.html", docs=rows, counts=counts, total=len(docs),
                            months=list(months.values()), peak=peak, urgent=urgent,
-                           vehicles=vehicles, vcount=vcount, MAIN_DOC_TYPES=config.MAIN_DOC_TYPES,
+                           vehicles=vehicles, vcount=vcount,
+                           MAIN_DOC_TYPES=[*config.MAIN_DOC_TYPES, "DRIVER_LICENSE"],
                            SHORT_LABEL=config.SHORT_LABEL, q=q, f_status=f_status, f_type=f_type)
 
 
 def vehicle_matrix(docs: list[dict]) -> list[dict]:
-    """One row per vehicle: the current tax / พ.ร.บ. / insurance document and whether it may be driven.
+    """One row per vehicle: current tax / พ.ร.บ. / insurance + assigned driver's licence, and whether it may go out.
 
-    * NO_DRIVE  – tax or พ.ร.บ. expired (illegal to drive) or missing
+    * NO_DRIVE  – tax, พ.ร.บ. or the assigned driver's licence expired / missing (illegal to drive)
     * RISK      – insurance expired/missing, or something expires within its window
     * READY     – everything valid
     """
+    def latest(target: dict, d: dict) -> None:
+        cur = target.get(d["doc_type"])
+        if not cur or (d.get("expiry_date") or "") > (cur.get("expiry_date") or ""):
+            target[d["doc_type"]] = d
+
     by_vehicle: dict[int, dict] = {}
+    licences: dict[int, dict] = {}  # driver owner_id -> latest licence
     for d in docs:
         if d["status"] in ("PENDING_REVIEW", "RENEWED"):
             continue
-        v = by_vehicle.setdefault(d["owner_id"], {"owner_id": d["owner_id"], "plate": d["owner_name"], "docs": {}})
-        cur = v["docs"].get(d["doc_type"])
-        if not cur or (d.get("expiry_date") or "") > (cur.get("expiry_date") or ""):
-            v["docs"][d["doc_type"]] = d
+        if d["owner_type"] == "DRIVER":
+            cur = licences.get(d["owner_id"])
+            if not cur or (d.get("expiry_date") or "") > (cur.get("expiry_date") or ""):
+                licences[d["owner_id"]] = d
+            continue
+        v = by_vehicle.setdefault(d["owner_id"], {"owner_id": d["owner_id"], "plate": d["owner_name"],
+                                                  "driver_id": d.get("driver_id"), "docs": {}})
+        latest(v["docs"], d)
     rows = []
     for v in by_vehicle.values():
+        driver = db.get_owner(v["driver_id"]) if v.get("driver_id") else None
+        v["driver"] = driver
+        lic = licences.get(driver["id"]) if driver else None
+        if lic:
+            v["docs"]["DRIVER_LICENSE"] = lic
         legal = [v["docs"].get(t) for t in ("VEHICLE_TAX", "COMPULSORY_INSURANCE")]
+        if driver:
+            legal.append(lic)
         ins = v["docs"].get("VEHICLE_INSURANCE")
         if any(x is None or x["status"] == "EXPIRED" for x in legal):
             v["readiness"] = "NO_DRIVE"
@@ -144,9 +162,19 @@ def upload():
 
 
 def _owner_for(ex: dict, email: str | None = None) -> int:
-    """Every document belongs to a vehicle, identified by its plate."""
+    """Vehicle documents belong to a vehicle (plate); a driver's licence belongs to the driver (name)."""
+    if ex.get("doc_type") == "DRIVER_LICENSE":
+        name = (ex.get("holder_name") or "").strip() or "ไม่ระบุชื่อคนขับ"
+        return db.upsert_owner("DRIVER", name, name, contact_email=email or None)
     plate = (ex.get("vehicle_plate") or "").strip() or "ไม่ระบุทะเบียน"
     return db.upsert_owner("VEHICLE", plate, plate, contact_email=email or None)
+
+
+def _owner_from_form(ex: dict, form) -> int:
+    owner_id = _owner_for(ex, form.get("owner_email"))
+    if ex.get("doc_type") == "DRIVER_LICENSE":
+        db.set_driver_contact(owner_id, form.get("driver_phone"), form.get("driver_line"))
+    return owner_id
 
 
 def _save_extraction(ex: dict, stored_file: str) -> int:
@@ -179,7 +207,7 @@ def new_document():
     if request.method == "POST":
         ex = _form_to_extraction(request.form)
         doc_id = db.add_document(
-            owner_id=_owner_for(ex, request.form.get("owner_email")), doc_type=ex["doc_type"],
+            owner_id=_owner_from_form(ex, request.form), doc_type=ex["doc_type"],
             doc_number=ex["doc_number"], holder_name=ex["holder_name"],
             issue_date=ex["issue_date"], expiry_date=ex["expiry_date"],
             issuing_authority=ex["issuing_authority"], raw_extraction={"engine": "manual"},
@@ -219,7 +247,7 @@ def document_detail(doc_id):
             flash("กรุณาระบุวันหมดอายุ", "warn")
             return redirect(url_for("document_detail", doc_id=doc_id))
         db.update_document(
-            doc_id, owner_id=_owner_for(ex, request.form.get("owner_email")), doc_type=ex["doc_type"],
+            doc_id, owner_id=_owner_from_form(ex, request.form), doc_type=ex["doc_type"],
             doc_number=ex["doc_number"], holder_name=ex["holder_name"], issue_date=ex["issue_date"],
             expiry_date=ex["expiry_date"], issuing_authority=ex["issuing_authority"],
             review_status="CONFIRMED", confidence=1.0, notes=request.form.get("notes"),
@@ -279,7 +307,7 @@ def alerts():
     outbox = config.OUTBOX_DIR / f"{date.today().isoformat()}.log"
     return render_template(
         "alerts.html", log=db.list_notifications(), channels=notifier.active_channels(),
-        thresholds=config.ALERT_THRESHOLDS,
+        thresholds=config.ALERT_THRESHOLDS, line_real=bool(config.LINE_CHANNEL_TOKEN),
         outbox=outbox.read_text(encoding="utf-8").splitlines()[-30:] if outbox.exists() else [],
         outbox_path=str(outbox),
     )

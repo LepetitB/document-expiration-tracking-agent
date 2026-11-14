@@ -17,13 +17,14 @@ from app.extraction.thai_date import to_thai
 
 MAX_TOOL_ROUNDS = 8
 
-SYSTEM_PROMPT = """คุณคือ "ผู้ช่วยติดตามเอกสารรถ" ของฝ่ายธุรการบริษัทขนส่ง ดูแลเอกสาร 3 อย่างของรถทุกคัน: ภาษีรถประจำปี, พ.ร.บ. (ประกันภาคบังคับ), ประกันภัยรถ (ภาคสมัครใจ) ตอบเป็นภาษาไทย กระชับ ชัดเจน
+SYSTEM_PROMPT = """คุณคือ "ผู้ช่วยติดตามเอกสารรถ" ของฝ่ายธุรการบริษัทขนส่ง ดูแลเอกสาร 3 อย่างของรถทุกคัน: ภาษีรถประจำปี, พ.ร.บ. (ประกันภาคบังคับ), ประกันภัยรถ (ภาคสมัครใจ) และใบขับขี่ของคนขับประจำรถ ตอบเป็นภาษาไทย กระชับ ชัดเจน
 - ข้อมูลเอกสารทุกอย่างต้องมาจาก tool เท่านั้น ห้ามเดาหรือแต่งข้อมูลเอง
 - ถ้าผู้ใช้ถามช่วงเวลา (เช่น "เดือนหน้า") ให้คำนวณจำนวนวันจากวันนี้แล้วเรียก list_expiring
-- เมื่อแสดงรายการให้ใช้ bullet ระบุ ทะเบียนรถ / ประเภทเอกสาร / วันหมดอายุ / เหลือกี่วัน
-- ภาษีรถหรือ พ.ร.บ. หมดอายุ = ห้ามนำรถออกวิ่ง (ผิดกฎหมาย); ต้องต่อ พ.ร.บ. ก่อนจึงจะชำระภาษีรถได้; ประกันภัยหมด = ถ้าเกิดอุบัติเหตุบริษัทต้องรับผิดชอบค่าเสียหายเอง
-- จัดลำดับความสำคัญ: หมดอายุแล้ว > ใกล้หมด; ภาษี/พ.ร.บ. ก่อนประกันภัย
-- คุณส่งข้อความแจ้งเตือนเองไม่ได้ ถ้าผู้ใช้ต้องการส่ง ให้บอกว่ากดปุ่ม "ตรวจและส่งแจ้งเตือน" ในหน้าแจ้งเตือน"""
+- เมื่อแสดงรายการให้ใช้ bullet ระบุ ทะเบียนรถหรือชื่อคนขับ / ประเภทเอกสาร / วันหมดอายุ / เหลือกี่วัน
+- ภาษีรถ, พ.ร.บ. หรือใบขับขี่ของคนขับประจำรถ หมดอายุ = ห้ามนำรถออกวิ่ง (ผิดกฎหมาย); ต้องต่อ พ.ร.บ. ก่อนจึงจะชำระภาษีรถได้; ประกันภัยหมด = ถ้าเกิดอุบัติเหตุบริษัทต้องรับผิดชอบค่าเสียหายเอง
+- get_owner_summary ของรถจะบอกคนขับประจำรถและใบขับขี่ด้วย
+- จัดลำดับความสำคัญ: หมดอายุแล้ว > ใกล้หมด; ภาษี/พ.ร.บ./ใบขับขี่ ก่อนประกันภัย
+- คุณส่งข้อความแจ้งเตือนเองไม่ได้ ถ้าผู้ใช้ต้องการส่ง ให้บอกว่ากดปุ่ม "ตรวจและส่งแจ้งเตือน" ในหน้าแจ้งเตือน (ระบบจะส่ง LINE ถึงคนขับที่เกี่ยวข้องให้เอง)"""
 
 # conversation id -> list of message dicts (kept server-side so thinking blocks are replayed unchanged)
 _CONVERSATIONS: dict[str, list[dict]] = {}
@@ -81,7 +82,8 @@ def _fmt(items: list[dict]) -> str:
     for x in items:
         left = x["days_left"]
         when = "ไม่ทราบ" if left is None else (f"เลยมา {-left} วัน" if left < 0 else f"เหลือ {left} วัน")
-        lines.append(f"- 🚛 **{x['owner']}** — {x['doc_type']} · หมดอายุ {x['expiry_date']} ({when})")
+        icon = "👷" if x.get("owner_type") == config.OWNER_TYPES["DRIVER"] else "🚛"
+        lines.append(f"- {icon} **{x['owner']}** — {x['doc_type']} · หมดอายุ {x['expiry_date']} ({when})")
     return "\n".join(lines)
 
 
@@ -92,7 +94,7 @@ def chat_offline(user_text: str) -> tuple[str, list[str]]:
         bad = [x for x in T.list_expiring(0) if x["days_left"] < 0 and x["doc_type"] != insurance]
         if not bad:
             return "ไม่มีรถที่ห้ามออกวิ่ง ✅", ["list_expiring"]
-        return "รถที่ภาษีหรือ พ.ร.บ. หมดอายุ (ห้ามออกวิ่ง):\n" + _fmt(bad), ["list_expiring"]
+        return "เอกสารที่ทำให้รถห้ามออกวิ่ง (ภาษี / พ.ร.บ. / ใบขับขี่ หมดอายุ):\n" + _fmt(bad), ["list_expiring"]
     if re.search(r"สถิติ|ภาพรวม|ทั้งหมดกี่|กี่ฉบับ|สรุป", t):
         s = T.get_stats()
         parts = [f"เอกสารทั้งหมด **{s['total']}** ฉบับ"] + [f"- {k}: {v}" for k, v in s["by_status"].items()]
@@ -111,10 +113,16 @@ def chat_offline(user_text: str) -> tuple[str, list[str]]:
     if m:
         r = T.get_owner_summary(m.group(1).replace(" ", ""))
         if r["found"]:
-            return f"เอกสารของรถ **{r['owner']}**\n" + _fmt(r["documents"]), ["get_owner_summary"]
+            text = f"เอกสารของรถ **{r['owner']}**\n" + _fmt(r["documents"])
+            if r.get("driver"):
+                text += f"\n\nคนขับประจำรถ: **{r['driver']}**"
+                if r.get("driver_license"):
+                    text += "\n" + _fmt(r["driver_license"])
+            return text, ["get_owner_summary"]
     if re.search(r"หมดอายุแล้ว|เลยกำหนด", t):
         return _fmt([x for x in T.list_expiring(0) if x["days_left"] < 0]), ["list_expiring"]
-    for key, dt in (("พ.ร.บ", "COMPULSORY_INSURANCE"), ("ภาษี", "VEHICLE_TAX"), ("ประกัน", "VEHICLE_INSURANCE")):
+    for key, dt in (("ใบขับขี่", "DRIVER_LICENSE"), ("คนขับ", "DRIVER_LICENSE"), ("พ.ร.บ", "COMPULSORY_INSURANCE"),
+                    ("ภาษี", "VEHICLE_TAX"), ("ประกัน", "VEHICLE_INSURANCE")):
         if key in t:
             label = config.doc_label(dt)
             return _fmt([x for x in T.list_expiring(days or 60) if x["doc_type"] == label]), ["list_expiring"]
@@ -125,7 +133,7 @@ def chat_offline(user_text: str) -> tuple[str, list[str]]:
         return _fmt(found), ["search_documents"]
     return ("โหมดออฟไลน์ (ไม่มี API key) รองรับคำถามแบบง่าย เช่น\n"
             "- \"รถคันไหนห้ามออกวิ่งบ้าง\"\n- \"30 วันข้างหน้ามีอะไรต้องต่อบ้าง\"\n"
-            "- \"รถ 70-1234\"\n- \"พ.ร.บ. คันไหนใกล้หมด\""), []
+            "- \"รถ 70-1234\"\n- \"ใบขับขี่คนขับคนไหนใกล้หมด\""), []
 
 
 def chat(cid: str, user_text: str) -> dict:

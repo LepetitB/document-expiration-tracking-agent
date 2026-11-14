@@ -40,5 +40,17 @@
     "doc_number": "POL-V3-713307",
     "expiry_date": "2026-12-29",
     "plate": "71-3307"
+  },
+  "08_driver_license_surachai": {
+    "doc_type": "DRIVER_LICENSE",
+    "doc_number": "64012345",
+    "expiry_date": "2026-12-02",
+    "holder": "สุรชัย พึ่งบุญ"
+  },
+  "09_driver_license_boonlert": {
+    "doc_type": "DRIVER_LICENSE",
+    "doc_number": "63098712",
+    "expiry_date": "2027-07-09",
+    "holder": "บุญเลิศ ใจงาม"
   }
 }

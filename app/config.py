@@ -37,21 +37,25 @@ LINE_CHANNEL_TOKEN = os.getenv("LINE_CHANNEL_TOKEN", "")
 LINE_TO = os.getenv("LINE_TO", "")
 
 # --- Domain ----------------------------------------------------------------
-# Scope: documents of the company's vehicles (fleet). Every document belongs to one vehicle (plate).
+# Scope: "can this vehicle legally go out today?" — the vehicle's documents + its assigned driver's licence.
 COMPANY_NAME = "บริษัท สยามฟลีท ทรานสปอร์ต จำกัด (สมมติ)"
-OWNER_TYPES = {"VEHICLE": "รถ"}
+OWNER_TYPES = {"VEHICLE": "รถ", "DRIVER": "คนขับ"}
 
 # doc_type -> (Thai label, owner type, "expiring soon" window in days)
 DOC_TYPES: dict[str, tuple[str, str, int]] = {
     "VEHICLE_TAX": ("ภาษีรถประจำปี", "VEHICLE", 30),
     "COMPULSORY_INSURANCE": ("พ.ร.บ. (ประกันภาคบังคับ)", "VEHICLE", 30),
     "VEHICLE_INSURANCE": ("ประกันภัยรถ (ภาคสมัครใจ)", "VEHICLE", 30),
+    "DRIVER_LICENSE": ("ใบอนุญาตขับรถ (ใบขับขี่)", "DRIVER", 30),
     "OTHER": ("เอกสารรถอื่น ๆ", "VEHICLE", 30),
 }
 # the three documents every vehicle must keep valid (columns of the per-vehicle view)
 MAIN_DOC_TYPES = ["VEHICLE_TAX", "COMPULSORY_INSURANCE", "VEHICLE_INSURANCE"]
 SHORT_LABEL = {"VEHICLE_TAX": "ภาษีรถ", "COMPULSORY_INSURANCE": "พ.ร.บ.", "VEHICLE_INSURANCE": "ประกันภัย",
-               "OTHER": "อื่น ๆ"}
+               "DRIVER_LICENSE": "ใบขับขี่", "OTHER": "อื่น ๆ"}
+
+# LINE messages to drivers: real push via LINE Messaging API when LINE_CHANNEL_TOKEN is set and the driver
+# has a LINE userId (they must add the company's LINE OA as a friend); otherwise simulated in the outbox.
 
 ALERT_THRESHOLDS = [90, 60, 30, 7, 0]  # days before expiry
 AUTO_CONFIRM_CONFIDENCE = 0.85
