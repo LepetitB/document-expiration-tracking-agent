@@ -5,7 +5,7 @@
 <p class="sub">เอกสารที่ AI มั่นใจ ≥ 85% และผ่านกฎตรวจสอบจะถูกบันทึกทันที ที่เหลือจะส่งเข้าคิว "ตรวจทาน"</p>
 <div class="card tbl-wrap">
 <table>
-  <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>เจ้าของ</th><th>วันหมดอายุ (ดิบ → แปลงแล้ว)</th><th>ความมั่นใจ</th><th>ผล</th><th></th></tr></thead>
+  <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>ทะเบียนรถ</th><th>วันหมดอายุ (ดิบ → แปลงแล้ว)</th><th>ความมั่นใจ</th><th>ผล</th><th></th></tr></thead>
   <tbody>
   {% for r in results %}
     {% if r.error %}
@@ -15,7 +15,7 @@
       <tr>
         <td class="small">{{ r.filename }}<br><span class="muted">{{ ex.engine }}</span></td>
         <td>{{ doc_label(ex.doc_type or 'OTHER') }}</td>
-        <td>{{ ex.vehicle_plate or ex.holder_name or '-' }}</td>
+        <td>{{ ex.vehicle_plate or '-' }}</td>
         <td><span class="muted small">{{ ex.expiry_date_raw or '-' }}</span><br>→ <b>{{ ex.expiry_date|thai }}</b>
           {% if ex.expiry_date %}<span class="small muted">({{ ex.expiry_date }})</span>{% endif %}</td>
         <td>{{ conf(ex.confidence) }}</td>

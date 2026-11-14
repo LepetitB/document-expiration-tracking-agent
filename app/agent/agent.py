@@ -17,11 +17,12 @@ from app.extraction.thai_date import to_thai
 
 MAX_TOOL_ROUNDS = 8
 
-SYSTEM_PROMPT = """คุณคือ "ผู้ช่วยติดตามเอกสาร" ของฝ่ายธุรการบริษัทขนส่ง ตอบเป็นภาษาไทย กระชับ ชัดเจน
+SYSTEM_PROMPT = """คุณคือ "ผู้ช่วยติดตามเอกสารรถ" ของฝ่ายธุรการบริษัทขนส่ง ดูแลเอกสาร 3 อย่างของรถทุกคัน: ภาษีรถประจำปี, พ.ร.บ. (ประกันภาคบังคับ), ประกันภัยรถ (ภาคสมัครใจ) ตอบเป็นภาษาไทย กระชับ ชัดเจน
 - ข้อมูลเอกสารทุกอย่างต้องมาจาก tool เท่านั้น ห้ามเดาหรือแต่งข้อมูลเอง
 - ถ้าผู้ใช้ถามช่วงเวลา (เช่น "เดือนหน้า") ให้คำนวณจำนวนวันจากวันนี้แล้วเรียก list_expiring
-- เมื่อแสดงรายการให้ใช้ bullet ระบุ ประเภทเอกสาร / เจ้าของ / วันหมดอายุ / เหลือกี่วัน
-- จัดลำดับความสำคัญ: หมดอายุแล้ว > ใกล้หมด; แนะนำเริ่มจากเอกสารที่ใช้เวลาต่ออายุนาน (Work Permit, ใบอนุญาตประกอบการ)
+- เมื่อแสดงรายการให้ใช้ bullet ระบุ ทะเบียนรถ / ประเภทเอกสาร / วันหมดอายุ / เหลือกี่วัน
+- ภาษีรถหรือ พ.ร.บ. หมดอายุ = ห้ามนำรถออกวิ่ง (ผิดกฎหมาย); ต้องต่อ พ.ร.บ. ก่อนจึงจะชำระภาษีรถได้; ประกันภัยหมด = ถ้าเกิดอุบัติเหตุบริษัทต้องรับผิดชอบค่าเสียหายเอง
+- จัดลำดับความสำคัญ: หมดอายุแล้ว > ใกล้หมด; ภาษี/พ.ร.บ. ก่อนประกันภัย
 - คุณส่งข้อความแจ้งเตือนเองไม่ได้ ถ้าผู้ใช้ต้องการส่ง ให้บอกว่ากดปุ่ม "ตรวจและส่งแจ้งเตือน" ในหน้าแจ้งเตือน"""
 
 # conversation id -> list of message dicts (kept server-side so thinking blocks are replayed unchanged)
@@ -80,12 +81,18 @@ def _fmt(items: list[dict]) -> str:
     for x in items:
         left = x["days_left"]
         when = "ไม่ทราบ" if left is None else (f"เลยมา {-left} วัน" if left < 0 else f"เหลือ {left} วัน")
-        lines.append(f"- **{x['doc_type']}** — {x['owner']} · หมดอายุ {x['expiry_date']} ({when})")
+        lines.append(f"- 🚛 **{x['owner']}** — {x['doc_type']} · หมดอายุ {x['expiry_date']} ({when})")
     return "\n".join(lines)
 
 
 def chat_offline(user_text: str) -> tuple[str, list[str]]:
     t = user_text.strip()
+    if re.search(r"ห้าม.*วิ่ง|วิ่งไม่ได้", t):
+        insurance = config.doc_label("VEHICLE_INSURANCE")
+        bad = [x for x in T.list_expiring(0) if x["days_left"] < 0 and x["doc_type"] != insurance]
+        if not bad:
+            return "ไม่มีรถที่ห้ามออกวิ่ง ✅", ["list_expiring"]
+        return "รถที่ภาษีหรือ พ.ร.บ. หมดอายุ (ห้ามออกวิ่ง):\n" + _fmt(bad), ["list_expiring"]
     if re.search(r"สถิติ|ภาพรวม|ทั้งหมดกี่|กี่ฉบับ|สรุป", t):
         s = T.get_stats()
         parts = [f"เอกสารทั้งหมด **{s['total']}** ฉบับ"] + [f"- {k}: {v}" for k, v in s["by_status"].items()]
@@ -100,21 +107,25 @@ def chat_offline(user_text: str) -> tuple[str, list[str]]:
         days = 60 if "เดือนหน้า" in t else 30
     elif "ปี" in t:
         days = 365
-    if re.search(r"หมดอายุแล้ว|เลยกำหนด", t):
-        return _fmt([x for x in T.list_expiring(0) if x["days_left"] < 0]), ["list_expiring"]
-    if days is not None or re.search(r"ใกล้หมด|ต้องต่อ|หมดอายุ", t):
-        return _fmt(T.list_expiring(days or 30)), ["list_expiring"]
-    m = re.search(r"(\d{1,2}\s*-\s*\d{3,4}|[ก-ฮ]{1,2}\s*\d{3,4}|EMP\d+|นาย\S+|นาง\S+|น\.ส\.\S+)", t, re.I)
+    m = re.search(r"(\d{1,2}\s*[ก-ฮ]{0,2}\s*-\s*\d{3,4}|[ก-ฮ]{1,3}\s*-?\s*\d{3,4})", t)
     if m:
         r = T.get_owner_summary(m.group(1).replace(" ", ""))
         if r["found"]:
-            return f"เอกสารของ **{r['owner']}**\n" + _fmt(r["documents"]), ["get_owner_summary"]
+            return f"เอกสารของรถ **{r['owner']}**\n" + _fmt(r["documents"]), ["get_owner_summary"]
+    if re.search(r"หมดอายุแล้ว|เลยกำหนด", t):
+        return _fmt([x for x in T.list_expiring(0) if x["days_left"] < 0]), ["list_expiring"]
+    for key, dt in (("พ.ร.บ", "COMPULSORY_INSURANCE"), ("ภาษี", "VEHICLE_TAX"), ("ประกัน", "VEHICLE_INSURANCE")):
+        if key in t:
+            label = config.doc_label(dt)
+            return _fmt([x for x in T.list_expiring(days or 60) if x["doc_type"] == label]), ["list_expiring"]
+    if days is not None or re.search(r"ใกล้หมด|ต้องต่อ|หมดอายุ", t):
+        return _fmt(T.list_expiring(days or 30)), ["list_expiring"]
     found = T.search_documents(t)
     if found:
         return _fmt(found), ["search_documents"]
     return ("โหมดออฟไลน์ (ไม่มี API key) รองรับคำถามแบบง่าย เช่น\n"
-            "- \"30 วันข้างหน้ามีอะไรหมดบ้าง\"\n- \"เอกสารที่หมดอายุแล้ว\"\n"
-            "- \"รถ 70-1234\"\n- \"สรุปภาพรวม\""), []
+            "- \"รถคันไหนห้ามออกวิ่งบ้าง\"\n- \"30 วันข้างหน้ามีอะไรต้องต่อบ้าง\"\n"
+            "- \"รถ 70-1234\"\n- \"พ.ร.บ. คันไหนใกล้หมด\""), []
 
 
 def chat(cid: str, user_text: str) -> dict:

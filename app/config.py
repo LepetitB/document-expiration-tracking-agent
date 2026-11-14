@@ -37,25 +37,21 @@ LINE_CHANNEL_TOKEN = os.getenv("LINE_CHANNEL_TOKEN", "")
 LINE_TO = os.getenv("LINE_TO", "")
 
 # --- Domain ----------------------------------------------------------------
-OWNER_TYPES = {
-    "EMPLOYEE": "พนักงาน",
-    "VEHICLE": "รถ",
-    "COMPANY": "บริษัท",
-    "CUSTOMER": "ลูกค้า",
-}
+# Scope: documents of the company's vehicles (fleet). Every document belongs to one vehicle (plate).
+COMPANY_NAME = "บริษัท สยามฟลีท ทรานสปอร์ต จำกัด (สมมติ)"
+OWNER_TYPES = {"VEHICLE": "รถ"}
 
 # doc_type -> (Thai label, owner type, "expiring soon" window in days)
 DOC_TYPES: dict[str, tuple[str, str, int]] = {
-    "DRIVER_LICENSE": ("ใบอนุญาตขับรถ", "EMPLOYEE", 30),
-    "WORK_PERMIT": ("ใบอนุญาตทำงาน (Work Permit)", "EMPLOYEE", 60),
-    "VISA": ("วีซ่า", "EMPLOYEE", 60),
     "VEHICLE_TAX": ("ภาษีรถประจำปี", "VEHICLE", 30),
-    "COMPULSORY_INSURANCE": ("พ.ร.บ. คุ้มครองผู้ประสบภัยจากรถ", "VEHICLE", 30),
-    "VEHICLE_INSURANCE": ("กรมธรรม์ประกันภัยรถยนต์", "VEHICLE", 30),
-    "TRANSPORT_LICENSE": ("ใบอนุญาตประกอบการขนส่ง", "COMPANY", 90),
-    "CONTRACT": ("สัญญาจ้างขนส่ง", "CUSTOMER", 60),
-    "OTHER": ("เอกสารอื่น ๆ", "COMPANY", 30),
+    "COMPULSORY_INSURANCE": ("พ.ร.บ. (ประกันภาคบังคับ)", "VEHICLE", 30),
+    "VEHICLE_INSURANCE": ("ประกันภัยรถ (ภาคสมัครใจ)", "VEHICLE", 30),
+    "OTHER": ("เอกสารรถอื่น ๆ", "VEHICLE", 30),
 }
+# the three documents every vehicle must keep valid (columns of the per-vehicle view)
+MAIN_DOC_TYPES = ["VEHICLE_TAX", "COMPULSORY_INSURANCE", "VEHICLE_INSURANCE"]
+SHORT_LABEL = {"VEHICLE_TAX": "ภาษีรถ", "COMPULSORY_INSURANCE": "พ.ร.บ.", "VEHICLE_INSURANCE": "ประกันภัย",
+               "OTHER": "อื่น ๆ"}
 
 ALERT_THRESHOLDS = [90, 60, 30, 7, 0]  # days before expiry
 AUTO_CONFIRM_CONFIDENCE = 0.85

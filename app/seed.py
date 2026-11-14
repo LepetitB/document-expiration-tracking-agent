@@ -1,30 +1,27 @@
-"""Synthetic demo data (fictional people, plates and numbers) relative to today's date."""
+"""Synthetic demo fleet (fictional plates and document numbers), dated relative to today."""
 from __future__ import annotations
 
 from datetime import date, timedelta
 
+from app.config import COMPANY_NAME
 from app.db import database as db
 
-# (doc_type, owner_type, owner_name, identifier, doc_number, days_until_expiry, validity_years)
-DEMO = [
-    ("DRIVER_LICENSE", "EMPLOYEE", "นายสมชาย ใจดี", "EMP001", "ท.2-64012345", 18, 3),
-    ("DRIVER_LICENSE", "EMPLOYEE", "นายวีระ ทองมาก", "EMP002", "ท.2-63098712", 240, 5),
-    ("DRIVER_LICENSE", "EMPLOYEE", "นายประสิทธิ์ แก้วกล้า", "EMP003", "ท.3-62055501", -6, 5),
-    ("WORK_PERMIT", "EMPLOYEE", "Mr. Aung Ko Ko", "EMP014", "WP-0067-889201", 45, 2),
-    ("WORK_PERMIT", "EMPLOYEE", "Mr. Sok Dara", "EMP015", "WP-0067-889377", 150, 2),
-    ("VISA", "EMPLOYEE", "Mr. Aung Ko Ko", "EMP014", "NON-LA-772031", 52, 1),
-    ("VEHICLE_TAX", "VEHICLE", "70-1234 ชลบุรี", "70-1234", "TAX-2569-001234", 12, 1),
-    ("COMPULSORY_INSURANCE", "VEHICLE", "70-1234 ชลบุรี", "70-1234", "CMI-25690331-77", 12, 1),
-    ("VEHICLE_INSURANCE", "VEHICLE", "70-1234 ชลบุรี", "70-1234", "POL-V1-554021", 95, 1),
-    ("VEHICLE_TAX", "VEHICLE", "70-5678 ชลบุรี", "70-5678", "TAX-2569-005678", 33, 1),
-    ("COMPULSORY_INSURANCE", "VEHICLE", "70-5678 ชลบุรี", "70-5678", "CMI-25690412-03", 33, 1),
-    ("COMPULSORY_INSURANCE", "VEHICLE", "71-0099 ระยอง", "71-0099", "CMI-25681201-55", -3, 1),
-    ("VEHICLE_TAX", "VEHICLE", "71-0099 ระยอง", "71-0099", "TAX-2569-710099", 200, 1),
-    ("VEHICLE_INSURANCE", "VEHICLE", "71-0099 ระยอง", "71-0099", "POL-V1-554388", 3, 1),
-    ("TRANSPORT_LICENSE", "COMPANY", "บริษัท สยามฟลีท ทรานสปอร์ต จำกัด", "0105556001234", "ขส.บ.(ม) 20-0451", 80, 7),
-    ("CONTRACT", "CUSTOMER", "บริษัท ไทยรีเทล ซัพพลาย จำกัด", "CUST-01", "CT-2025-0107", 58, 2),
-    ("CONTRACT", "CUSTOMER", "บริษัท อีสเทิร์น ฟู้ดส์ จำกัด", "CUST-02", "CT-2025-0213", 310, 2),
+# plate, province, days until expiry for (tax, พ.ร.บ., insurance)
+FLEET = [
+    ("70-1234", "ชลบุรี", 12, 12, 95),
+    ("70-5678", "ชลบุรี", 33, 33, 140),
+    ("71-0099", "ระยอง", 200, -3, 3),
+    ("72-4410", "ชลบุรี", 250, 250, 250),
+    ("70-8821", "ชลบุรี", -20, 340, 340),
+    ("71-3307", "ระยอง", 45, 45, 45),
+    ("70-2299", "ชลบุรี", 25, 25, 180),
+    ("72-0157", "ฉะเชิงเทรา", 60, 60, -15),
+    ("71-5530", "ระยอง", 300, 300, 300),
+    ("70-6612", "ชลบุรี", 7, 7, 7),
+    ("72-9045", "ฉะเชิงเทรา", 150, 150, 20),
+    ("70-3388", "ชลบุรี", 90, 90, 210),
 ]
+INSURERS = ["บริษัท ไทยประกันภัยตัวอย่าง จำกัด", "บริษัท สยามประกันภัยสมมติ จำกัด"]
 
 
 def seed(reset: bool = False) -> int:
@@ -34,15 +31,21 @@ def seed(reset: bool = False) -> int:
         db.init_db()
     today = date.today()
     n = 0
-    for doc_type, otype, name, ident, number, days, years in DEMO:
-        owner_id = db.upsert_owner(otype, name, ident, responsible_person="ฝ่ายธุรการ")
-        expiry = today + timedelta(days=days)
-        issue = expiry - timedelta(days=365 * years)
-        db.add_document(owner_id=owner_id, doc_type=doc_type, doc_number=number,
-                        holder_name=name if otype != "VEHICLE" else "บริษัท สยามฟลีท ทรานสปอร์ต จำกัด",
-                        issue_date=issue, expiry_date=expiry, raw_extraction={"engine": "seed"},
-                        notes="ข้อมูลตัวอย่าง (สมมติ)")
-        n += 1
+    for i, (plate, province, tax, prb, ins) in enumerate(FLEET):
+        name = f"{plate} {province}"
+        owner_id = db.upsert_owner("VEHICLE", name, plate, responsible_person="ฝ่ายธุรการ")
+        digits = plate.replace("-", "")
+        for doc_type, days, number, issuer in (
+            ("VEHICLE_TAX", tax, f"TAX-{digits}-{2569 + i % 2}", "กรมการขนส่งทางบก"),
+            ("COMPULSORY_INSURANCE", prb, f"CMI-{digits}-{100 + i}", INSURERS[i % 2]),
+            ("VEHICLE_INSURANCE", ins, f"POL-V1-{digits}", INSURERS[(i + 1) % 2]),
+        ):
+            expiry = today + timedelta(days=days)
+            db.add_document(owner_id=owner_id, doc_type=doc_type, doc_number=number,
+                            holder_name=COMPANY_NAME, issue_date=expiry - timedelta(days=365),
+                            expiry_date=expiry, issuing_authority=issuer,
+                            raw_extraction={"engine": "seed"}, notes="ข้อมูลตัวอย่าง (สมมติ)")
+            n += 1
     return n
 
 

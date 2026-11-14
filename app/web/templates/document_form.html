@@ -40,8 +40,8 @@
         {% for k, v in DOC_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if doc and doc.doc_type == k }}>{{ v[0] }}</option>{% endfor %}
       </select>
     </div>
-    {{ row('ชื่อผู้ถือ / บริษัท', 'holder_name', doc.holder_name if doc else '', fc.get('holder_name'), hl=pending) }}
-    {{ row('ทะเบียนรถ (เฉพาะเอกสารรถ)', 'vehicle_plate', raw.get('vehicle_plate') or (doc.owner_identifier if doc and doc.owner_type == 'VEHICLE' else '')) }}
+    {{ row('ทะเบียนรถ (เช่น 70-1234 ชลบุรี)', 'vehicle_plate', raw.get('vehicle_plate') or (doc.owner_name if doc else ''), fc.get('vehicle_plate'), hl=pending) }}
+    {{ row('ชื่อผู้เอาประกัน / เจ้าของรถ', 'holder_name', doc.holder_name if doc else '') }}
     {{ row('เลขที่เอกสาร', 'doc_number', doc.doc_number if doc else '', fc.get('doc_number'), hl=pending) }}
     <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
       {{ row('วันออกเอกสาร (ค.ศ.)', 'issue_date', doc.issue_date if doc else '', None, 'date') }}
@@ -51,7 +51,7 @@
       <p class="raw">ข้อความวันหมดอายุในเอกสาร: <b>{{ raw.expiry_date_raw }}</b>
         {% if raw.get('year_system') == 'BUDDHIST' %}(พ.ศ. → แปลงเป็น ค.ศ. แล้ว){% endif %}</p>
     {% endif %}
-    {{ row('หน่วยงานที่ออก', 'issuing_authority', doc.issuing_authority if doc else '') }}
+    {{ row('ผู้ออกเอกสาร (บริษัทประกัน / กรมการขนส่ง)', 'issuing_authority', doc.issuing_authority if doc else '') }}
     {{ row('อีเมลผู้รับผิดชอบ (ไม่บังคับ)', 'owner_email', doc.owner_email if doc else '', None, 'email') }}
     <div class="form-row"><label>หมายเหตุ</label><textarea name="notes" rows="2">{{ doc.notes if doc and doc.notes else '' }}</textarea></div>
 

@@ -1,15 +1,43 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_pill, days with context %}
 {% block content %}
-<h1>Dashboard เอกสาร</h1>
-<p class="sub">ภาพรวมเอกสารที่มีวันหมดอายุของพนักงาน รถ บริษัท และลูกค้า</p>
+<h1>Dashboard เอกสารรถ</h1>
+<p class="sub">ติดตาม ภาษีรถ · พ.ร.บ. · ประกันภัย ของรถทุกคันในบริษัท — รถจะออกวิ่งได้ต้องมีเอกสารที่ยังไม่หมดอายุครบ</p>
 
 <div class="grid stats">
-  <a class="card stat" href="{{ url_for('dashboard') }}"><div class="n">{{ total }}</div><div class="l">เอกสารทั้งหมด</div></a>
-  <a class="card stat red" href="?status=EXPIRED"><div class="n">{{ counts.EXPIRED or 0 }}</div><div class="l">🔴 หมดอายุแล้ว</div></a>
-  <a class="card stat amber" href="?status=EXPIRING"><div class="n">{{ counts.EXPIRING or 0 }}</div><div class="l">🟡 ใกล้หมดอายุ</div></a>
-  <a class="card stat green" href="?status=VALID"><div class="n">{{ counts.VALID or 0 }}</div><div class="l">🟢 ปกติ</div></a>
-  <a class="card stat violet" href="{{ url_for('review_queue') }}"><div class="n">{{ counts.PENDING_REVIEW or 0 }}</div><div class="l">🟣 รอตรวจทาน</div></a>
+  <div class="card stat"><div class="n">{{ vehicles|length }}</div><div class="l">🚛 รถทั้งหมด (คัน)</div></div>
+  <div class="card stat red"><div class="n">{{ vcount.NO_DRIVE or 0 }}</div><div class="l">⛔ ห้ามออกวิ่ง</div></div>
+  <div class="card stat amber"><div class="n">{{ vcount.RISK or 0 }}</div><div class="l">⚠️ ต้องรีบต่อ</div></div>
+  <div class="card stat green"><div class="n">{{ vcount.READY or 0 }}</div><div class="l">✅ พร้อมวิ่ง</div></div>
+  <a class="card stat violet" href="{{ url_for('review_queue') }}"><div class="n">{{ counts.PENDING_REVIEW or 0 }}</div><div class="l">🟣 เอกสารรอตรวจ</div></a>
+</div>
+
+<div class="card" style="margin-bottom:18px">
+  <h2>สถานะรายคัน</h2>
+  <div class="tbl-wrap">
+  <table class="matrix">
+    <thead><tr><th>ทะเบียนรถ</th>{% for t in MAIN_DOC_TYPES %}<th>{{ SHORT_LABEL[t] }}</th>{% endfor %}<th>สรุป</th></tr></thead>
+    <tbody>
+    {% for v in vehicles %}
+      <tr>
+        <td><b>{{ v.plate }}</b></td>
+        {% for t in MAIN_DOC_TYPES %}
+          {% set d = v.docs.get(t) %}
+          <td>{% if d %}<a href="{{ url_for('document_detail', doc_id=d.id) }}" class="cell {{ d.status }}">
+                {{ STATUS_ICON[d.status] }} {{ d.expiry_date|thai }}<br><span class="small">{{ days(d) }}</span></a>
+              {% else %}<span class="cell EXPIRED">❌ ไม่มีข้อมูล</span>{% endif %}</td>
+        {% endfor %}
+        <td>{% if v.readiness == 'NO_DRIVE' %}<span class="pill EXPIRED">⛔ ห้ามออกวิ่ง</span>
+            {% elif v.readiness == 'RISK' %}<span class="pill EXPIRING">⚠️ ต้องรีบต่อ</span>
+            {% else %}<span class="pill VALID">✅ พร้อมวิ่ง</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">ยังไม่มีรถในระบบ — อัปโหลดเอกสารรถเพื่อเริ่มต้น</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted" style="margin:10px 0 0">⛔ ภาษีรถหรือ พ.ร.บ. หมดอายุ = ผิดกฎหมายถ้านำรถออกวิ่ง · ⚠️ ประกันภัยหมด หรือมีเอกสารจะหมดภายใน 30 วัน</p>
 </div>
 
 <div class="grid two">
@@ -31,7 +59,7 @@
     <ul class="plain urgent">
       {% for d in urgent %}
       <li><span><a href="{{ url_for('document_detail', doc_id=d.id) }}">{{ doc_label(d.doc_type) }}</a><br>
-        <span class="small muted">{{ d.owner_name }}</span></span>
+        <span class="small muted">🚛 {{ d.owner_name }}</span></span>
         <span style="text-align:right">{{ days(d) }}<br><span class="small muted">{{ d.expiry_date|thai }}</span></span></li>
       {% endfor %}
     </ul>
@@ -40,8 +68,9 @@
 </div>
 
 <div class="card">
+  <h2>เอกสารทั้งหมด ({{ total }} ฉบับ)</h2>
   <form class="filters" method="get">
-    <input name="q" value="{{ q }}" placeholder="ค้นหา ชื่อ / ทะเบียนรถ / เลขที่เอกสาร" style="min-width:260px">
+    <input name="q" value="{{ q }}" placeholder="ค้นหา ทะเบียนรถ / เลขที่เอกสาร" style="min-width:240px">
     <select name="status">
       <option value="">ทุกสถานะ</option>
       {% for k in ['EXPIRED','EXPIRING','VALID','PENDING_REVIEW','UNKNOWN'] %}
@@ -56,13 +85,13 @@
   </form>
   <div class="tbl-wrap">
   <table>
-    <thead><tr><th>สถานะ</th><th>ประเภทเอกสาร</th><th>เจ้าของ</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
+    <thead><tr><th>สถานะ</th><th>ทะเบียนรถ</th><th>ประเภทเอกสาร</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
     <tbody>
     {% for d in docs %}
       <tr>
         <td>{{ status_pill(d.status) }}</td>
+        <td><b>{{ d.owner_name }}</b></td>
         <td>{{ doc_label(d.doc_type) }}</td>
-        <td>{{ d.owner_name }}<br><span class="small muted">{{ OWNER_TYPES.get(d.owner_type, '') }}</span></td>
         <td class="small">{{ d.doc_number or '-' }}</td>
         <td>{{ d.expiry_date|thai }}</td>
         <td>{{ days(d) }}</td>

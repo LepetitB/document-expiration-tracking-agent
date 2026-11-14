@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
-os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ["ANTHROPIC_API_KEY"] = ""  # empty (not unset) so load_dotenv() cannot fill it from .env
 os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 from app.agent.agent import chat_offline  # noqa: E402
@@ -34,28 +34,41 @@ def test_pages_render(client):
 
 
 def test_upload_text_document(client):
-    data = (SAMPLES / "01_driver_license_somchai.txt").read_bytes()
-    r = client.post("/upload", data={"engine": "rules", "files": (io.BytesIO(data), "license.txt")},
+    data = (SAMPLES / "05_insurance_70-1234.txt").read_bytes()
+    r = client.post("/upload", data={"engine": "rules", "files": (io.BytesIO(data), "policy.txt")},
                     content_type="multipart/form-data")
     assert r.status_code == 200
-    assert "2027-01-15" in r.get_data(as_text=True)
+    assert "2027-02-18" in r.get_data(as_text=True)
     pending = db.list_documents(review_status="PENDING_REVIEW")
-    assert pending and pending[0]["expiry_date"] == "2027-01-15"
+    assert pending and pending[0]["expiry_date"] == "2027-02-18"
+    assert pending[0]["owner_identifier"] == "70-1234"  # linked to the existing vehicle
 
     # confirm via the review form
     doc = pending[0]
     r = client.post(f"/documents/{doc['id']}", data={
-        "doc_type": "DRIVER_LICENSE", "holder_name": "นายสมชาย ใจดี", "doc_number": "64012345",
-        "issue_date": "2022-01-15", "expiry_date": "2027-01-15"})
+        "doc_type": "VEHICLE_INSURANCE", "vehicle_plate": "70-1234 ชลบุรี", "doc_number": "POL-V1-554021",
+        "issue_date": "2026-02-18", "expiry_date": "2027-02-18"})
     assert r.status_code == 302
     assert db.get_document(doc["id"])["review_status"] == "CONFIRMED"
 
 
 def test_renewal_supersedes_old_document(client):
-    old = [d for d in db.list_documents() if d["doc_type"] == "DRIVER_LICENSE" and d["owner_identifier"] == "EMP003"][0]
-    client.post("/documents/new", data={"doc_type": "DRIVER_LICENSE", "holder_name": old["owner_name"],
-                                        "doc_number": "NEW-1", "issue_date": "2026-11-01", "expiry_date": "2031-11-01"})
+    old = [d for d in db.list_documents()
+           if d["doc_type"] == "COMPULSORY_INSURANCE" and d["owner_identifier"] == "71-0099"][0]
+    client.post("/documents/new", data={"doc_type": "COMPULSORY_INSURANCE", "vehicle_plate": "71-0099 ระยอง",
+                                        "doc_number": "NEW-1", "issue_date": "2026-11-14", "expiry_date": "2027-11-14"})
     assert db.get_document(old["id"])["renewed"] == 1
+
+
+def test_vehicle_matrix_readiness(client):
+    from app.core.status import enrich
+    from app.web.server import vehicle_matrix
+
+    rows = {v["plate"]: v["readiness"] for v in vehicle_matrix(enrich(db.list_documents()))}
+    assert rows["71-0099 ระยอง"] == "NO_DRIVE"   # พ.ร.บ. expired
+    assert rows["70-8821 ชลบุรี"] == "NO_DRIVE"   # tax expired
+    assert rows["72-0157 ฉะเชิงเทรา"] == "RISK"   # insurance expired
+    assert rows["72-4410 ชลบุรี"] == "READY"
 
 
 def test_alerts_sent_once(client):
@@ -70,3 +83,5 @@ def test_chat_api_offline(client):
     assert r.status_code == 200 and body["tools"] == ["list_expiring"]
     answer, _ = chat_offline("รถ 70-1234")
     assert "70-1234" in answer
+    answer, _ = chat_offline("รถคันไหนห้ามออกวิ่งบ้าง")
+    assert "71-0099" in answer and "70-8821" in answer and "72-0157" not in answer

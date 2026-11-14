@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from app.config import AUTO_CONFIRM_CONFIDENCE, DOC_TYPES
 
 PLATE_RE = re.compile(r"^\s*(\d{1,2}\s*[ก-ฮ]{0,2}|[ก-ฮ]{1,3})\s*-?\s*\d{1,4}")
-KEY_FIELDS = ("doc_type", "expiry_date", "doc_number", "holder_name")
+KEY_FIELDS = ("doc_type", "expiry_date", "doc_number", "vehicle_plate")
 
 
 def validate(ex: dict, today: date | None = None) -> list[str]:
@@ -31,16 +31,11 @@ def validate(ex: dict, today: date | None = None) -> list[str]:
         problems.append("วันออกเอกสารอยู่ในอนาคต")
     if not ex.get("doc_number"):
         problems.append("ไม่พบเลขที่เอกสาร")
-    if not (ex.get("holder_name") or ex.get("vehicle_plate")):
-        problems.append("ไม่พบชื่อผู้ถือ/ทะเบียนรถ")
-
-    owner_type = DOC_TYPES.get(ex.get("doc_type", ""), ("", ""))[1]
     plate = ex.get("vehicle_plate")
-    if owner_type == "VEHICLE":
-        if not plate:
-            problems.append("เอกสารรถแต่ไม่พบทะเบียนรถ")
-        elif not PLATE_RE.match(plate):
-            problems.append(f"รูปแบบทะเบียนรถไม่ถูกต้อง: {plate}")
+    if not plate:
+        problems.append("ไม่พบทะเบียนรถ")
+    elif not PLATE_RE.match(plate):
+        problems.append(f"รูปแบบทะเบียนรถไม่ถูกต้อง: {plate}")
     return problems
 
 

@@ -17,8 +17,8 @@ from app.extraction.thai_date import to_thai
 def build_message(doc: dict) -> str:
     left = doc["days_left"]
     when = "หมดอายุแล้ว" if left < 0 else ("หมดอายุวันนี้" if left == 0 else f"จะหมดอายุในอีก {left} วัน")
-    owner = doc.get("owner_name") or doc.get("holder_name") or "-"
-    return (f"⚠️ {doc_label(doc['doc_type'])} ของ {owner} {when} "
+    plate = doc.get("owner_name") or "-"
+    return (f"⚠️ {doc_label(doc['doc_type'])} รถทะเบียน {plate} {when} "
             f"(วันหมดอายุ {to_thai(date.fromisoformat(doc['expiry_date']))}) "
             f"เลขที่ {doc.get('doc_number') or '-'} — กรุณาดำเนินการต่ออายุ")
 

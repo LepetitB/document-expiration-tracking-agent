@@ -33,7 +33,7 @@
     {% for n in log %}
       <tr><td class="small">{{ n.sent_at.replace('T',' ') }}</td>
         <td>{{ 'วันหมดอายุ' if n.threshold_days == 0 else n.threshold_days ~ ' วัน' }}</td>
-        <td>{{ doc_label(n.doc_type) }}<br><span class="small muted">{{ n.owner_name }}</span></td>
+        <td>{{ doc_label(n.doc_type) }}<br><span class="small muted">🚛 {{ n.owner_name }}</span></td>
         <td class="small">{{ n.message }}</td><td class="small">{{ n.channel }}</td></tr>
     {% else %}
       <tr><td colspan="5" class="muted">ยังไม่มีการแจ้งเตือน — กดปุ่ม "ตรวจและส่งแจ้งเตือนตอนนี้"</td></tr>

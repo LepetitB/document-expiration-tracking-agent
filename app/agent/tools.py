@@ -59,7 +59,7 @@ def get_owner_summary(identifier: str) -> dict:
     docs = [d for d in _active()
             if ident in (d.get("owner_identifier") or "").lower() or ident in (d.get("owner_name") or "").lower()]
     if not docs:
-        return {"found": False, "message": f"ไม่พบเจ้าของเอกสาร '{identifier}'"}
+        return {"found": False, "message": f"ไม่พบรถทะเบียน '{identifier}'"}
     return {"found": True, "owner": docs[0]["owner_name"],
             "owner_type": OWNER_TYPES.get(docs[0]["owner_type"], ""),
             "documents": [_brief(d) for d in docs]}
@@ -78,7 +78,7 @@ def draft_reminder(document_id: int, tone: str = "สุภาพ") -> dict:
         return {"error": f"ไม่พบเอกสาร id={document_id}"}
     d = enrich([d])[0]
     return {"document": _brief(d), "tone": tone,
-            "instruction": "ใช้ข้อมูลนี้ร่างข้อความแจ้งเตือนภาษาไทยให้เจ้าของเอกสาร"}
+            "instruction": "ใช้ข้อมูลนี้ร่างข้อความแจ้งเตือนภาษาไทยถึงผู้รับผิดชอบรถคันนี้"}
 
 
 TOOLS = {
@@ -92,7 +92,7 @@ TOOLS = {
 TOOL_SCHEMAS = [
     {
         "name": "search_documents",
-        "description": "ค้นหาเอกสารตามชื่อเจ้าของ เลขพนักงาน ทะเบียนรถ หรือเลขที่เอกสาร กรองตามประเภท/สถานะได้",
+        "description": "ค้นหาเอกสารตามทะเบียนรถหรือเลขที่เอกสาร กรองตามประเภท/สถานะได้",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -117,7 +117,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "get_owner_summary",
-        "description": "สรุปเอกสารทั้งหมดของเจ้าของหนึ่งราย (พนักงาน รถ บริษัท ลูกค้า) ค้นด้วยชื่อหรือรหัส/ทะเบียน",
+        "description": "สรุปเอกสารทั้งหมด (ภาษี/พ.ร.บ./ประกัน) ของรถหนึ่งคัน ค้นด้วยทะเบียนรถ เช่น 70-1234",
         "input_schema": {
             "type": "object",
             "properties": {"identifier": {"type": "string"}},

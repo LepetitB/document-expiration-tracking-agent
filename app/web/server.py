@@ -72,9 +72,45 @@ def dashboard():
                 months[key]["n"] += 1
     peak = max([m["n"] for m in months.values()] + [1])
     urgent = [d for d in docs if d["status"] in ("EXPIRED", "EXPIRING")][:6]
+    vehicles = vehicle_matrix(docs)
+    vcount = Counter(v["readiness"] for v in vehicles)
     return render_template("dashboard.html", docs=rows, counts=counts, total=len(docs),
                            months=list(months.values()), peak=peak, urgent=urgent,
-                           q=q, f_status=f_status, f_type=f_type)
+                           vehicles=vehicles, vcount=vcount, MAIN_DOC_TYPES=config.MAIN_DOC_TYPES,
+                           SHORT_LABEL=config.SHORT_LABEL, q=q, f_status=f_status, f_type=f_type)
+
+
+def vehicle_matrix(docs: list[dict]) -> list[dict]:
+    """One row per vehicle: the current tax / พ.ร.บ. / insurance document and whether it may be driven.
+
+    * NO_DRIVE  – tax or พ.ร.บ. expired (illegal to drive) or missing
+    * RISK      – insurance expired/missing, or something expires within its window
+    * READY     – everything valid
+    """
+    by_vehicle: dict[int, dict] = {}
+    for d in docs:
+        if d["status"] in ("PENDING_REVIEW", "RENEWED"):
+            continue
+        v = by_vehicle.setdefault(d["owner_id"], {"owner_id": d["owner_id"], "plate": d["owner_name"], "docs": {}})
+        cur = v["docs"].get(d["doc_type"])
+        if not cur or (d.get("expiry_date") or "") > (cur.get("expiry_date") or ""):
+            v["docs"][d["doc_type"]] = d
+    rows = []
+    for v in by_vehicle.values():
+        legal = [v["docs"].get(t) for t in ("VEHICLE_TAX", "COMPULSORY_INSURANCE")]
+        ins = v["docs"].get("VEHICLE_INSURANCE")
+        if any(x is None or x["status"] == "EXPIRED" for x in legal):
+            v["readiness"] = "NO_DRIVE"
+        elif ins is None or ins["status"] == "EXPIRED" or any(
+                x["status"] == "EXPIRING" for x in v["docs"].values()):
+            v["readiness"] = "RISK"
+        else:
+            v["readiness"] = "READY"
+        lefts = [x["days_left"] for x in v["docs"].values() if x.get("days_left") is not None]
+        v["min_left"] = min(lefts) if lefts else 9999
+        rows.append(v)
+    order = {"NO_DRIVE": 0, "RISK": 1, "READY": 2}
+    return sorted(rows, key=lambda v: (order[v["readiness"]], v["min_left"]))
 
 
 # --------------------------------------------------------------------------- upload
@@ -108,13 +144,9 @@ def upload():
 
 
 def _owner_for(ex: dict, email: str | None = None) -> int:
-    owner_type = DOC_TYPES.get(ex.get("doc_type") or "OTHER", DOC_TYPES["OTHER"])[1]
-    if owner_type == "VEHICLE" and ex.get("vehicle_plate"):
-        name = ident = ex["vehicle_plate"].strip()
-    else:
-        name = (ex.get("holder_name") or "ไม่ระบุ").strip()
-        ident = name
-    return db.upsert_owner(owner_type, name, ident, contact_email=email or None)
+    """Every document belongs to a vehicle, identified by its plate."""
+    plate = (ex.get("vehicle_plate") or "").strip() or "ไม่ระบุทะเบียน"
+    return db.upsert_owner("VEHICLE", plate, plate, contact_email=email or None)
 
 
 def _save_extraction(ex: dict, stored_file: str) -> int:

@@ -48,19 +48,20 @@ EXTRACTION_SCHEMA = {
 
 DOC_TYPE_GUIDE = "\n".join(f"- {k}: {v[0]}" for k, v in config.DOC_TYPES.items())
 
-EXTRACTION_PROMPT = f"""คุณคือระบบอ่านเอกสารของฝ่ายธุรการบริษัทขนส่ง อ่านเอกสารที่แนบมาแล้วดึงข้อมูลตาม schema
+EXTRACTION_PROMPT = f"""คุณคือระบบอ่านเอกสารรถของฝ่ายธุรการบริษัทขนส่ง อ่านเอกสารที่แนบมาแล้วดึงข้อมูลตาม schema
 
 ประเภทเอกสาร (doc_type):
 {DOC_TYPE_GUIDE}
 
 กติกา:
-1. expiry_date_raw = วันหมดอายุ / วันสิ้นสุดความคุ้มครอง / "ใช้ได้ถึง" — คัดลอกข้อความวันที่ตามที่ปรากฏในเอกสารทุกตัวอักษร (เช่น "28 ก.พ. 2570" หรือ "28/02/2027") ห้ามแปลงปีหรือคำนวณเอง
-2. issue_date_raw = วันออกเอกสาร / วันเริ่มคุ้มครอง (คัดลอกตามจริงเช่นกัน) — อย่าสับสนกับวันเกิด
+1. expiry_date_raw = วันหมดอายุ / วันครบกำหนดเสียภาษี / วันสิ้นสุดความคุ้มครอง — คัดลอกข้อความวันที่ตามที่ปรากฏในเอกสารทุกตัวอักษร (เช่น "28 ก.พ. 2570" หรือ "28/02/2027") ห้ามแปลงปีหรือคำนวณเอง
+2. issue_date_raw = วันออกเอกสาร / วันเริ่มคุ้มครอง (คัดลอกตามจริงเช่นกัน) — อย่าสับสนกับวันจดทะเบียนรถ
 3. year_system = BUDDHIST ถ้าปีในเอกสารเป็น พ.ศ., GREGORIAN ถ้าเป็น ค.ศ.
-4. holder_name = ชื่อบุคคลหรือบริษัทผู้ถือเอกสาร; vehicle_plate = ทะเบียนรถพร้อมจังหวัดถ้ามี (เฉพาะเอกสารเกี่ยวกับรถ)
-5. ถ้าไม่พบฟิลด์ใดให้ใส่ null — ห้ามเดา
-6. field_confidence = ความมั่นใจ 0–1 ของแต่ละฟิลด์ (ภาพเบลอ/ตัวอักษรไม่ชัด/มีหลายวันที่ให้คะแนนต่ำ)
-7. notes = ข้อสังเกตสั้น ๆ ภาษาไทย (เช่น ภาพเอียง, มีหลายวันที่)"""
+4. vehicle_plate = ทะเบียนรถพร้อมจังหวัด (เช่น "70-1234 ชลบุรี"); holder_name = ชื่อผู้เอาประกัน/เจ้าของรถ
+5. ถ้าเอกสารไม่ใช่เอกสารรถ ให้ใช้ doc_type = OTHER และอธิบายใน notes
+6. ถ้าไม่พบฟิลด์ใดให้ใส่ null — ห้ามเดา
+7. field_confidence = ความมั่นใจ 0–1 ของแต่ละฟิลด์ (ภาพเบลอ/ตัวอักษรไม่ชัด/มีหลายวันที่ให้คะแนนต่ำ)
+8. notes = ข้อสังเกตสั้น ๆ ภาษาไทย (เช่น ภาพเอียง, มีหลายวันที่)"""
 
 SUPPORTED_IMAGE = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
@@ -122,20 +123,17 @@ def extract_with_claude(path: Path) -> dict:
 
 # --------------------------------------------------------------------------- Rule-based engine
 KEYWORDS = [
-    ("WORK_PERMIT", ["ใบอนุญาตทำงาน", "work permit"]),
-    ("VISA", ["visa", "วีซ่า", "ตรวจลงตรา"]),
-    ("DRIVER_LICENSE", ["ใบอนุญาตขับรถ", "ใบขับขี่", "driving licence", "driving license"]),
     ("COMPULSORY_INSURANCE", ["พ.ร.บ.", "คุ้มครองผู้ประสบภัย", "compulsory"]),
     ("VEHICLE_TAX", ["ภาษีรถ", "เครื่องหมายแสดงการเสียภาษี", "ป้ายภาษี", "ป้ายวงกลม"]),
-    ("VEHICLE_INSURANCE", ["กรมธรรม์", "ประกันภัยรถยนต์", "policy"]),
-    ("TRANSPORT_LICENSE", ["ใบอนุญาตประกอบการขนส่ง", "การขนส่งทางบก"]),
-    ("CONTRACT", ["สัญญา", "contract", "agreement"]),
+    ("VEHICLE_INSURANCE", ["กรมธรรม์", "ประกันภัยรถ", "policy", "motor insurance"]),
 ]
-EXPIRY_HINT = re.compile(r"(หมดอายุ|สิ้นสุด|ใช้ได้ถึง|ถึงวันที่|valid until|expir|ครบกำหนด)", re.I)
-ISSUE_HINT = re.compile(r"(วันออก|ออกให้|วันที่ออก|เริ่ม|issue|ตั้งแต่)", re.I)
+EXPIRY_HINT = re.compile(r"(หมดอายุ|สิ้นสุด|ใช้ได้ถึง|ถึงวันที่|valid until|expir|ครบกำหนด|\bto\b)", re.I)
+ISSUE_HINT = re.compile(r"(วันออก|ออกให้|วันที่ออก|เริ่ม|issue|ตั้งแต่|\bfrom\b)", re.I)
 NUMBER_RE = re.compile(r"(?:เลขที่|ฉบับที่|No\.?|Number|กรมธรรม์เลขที่)\s*[:：]?\s*([A-Za-z0-9/\-]{4,})", re.I)
-NAME_RE = re.compile(r"(?:ชื่อ(?:ผู้ถือ|ผู้เอาประกัน|ลูกจ้าง)?|Name|ผู้รับใบอนุญาต|คู่สัญญา)\s*[:：]?\s*([^\n:]{3,60})", re.I)
-PLATE_TEXT_RE = re.compile(r"(?:ทะเบียน(?:รถ)?)\s*[:：]?\s*([0-9]{0,2}\s*[ก-ฮ]{0,2}\s*-?\s*[0-9]{1,4}(?:\s+[ก-๙]+)?)")
+NAME_RE = re.compile(r"(?:ชื่อ(?:ผู้เอาประกันภัย|ผู้เอาประกัน|เจ้าของรถ|ผู้ถือ)?|Insured|Name)\s*[:：]?\s*([^\n:]{3,60})", re.I)
+PLATE_TEXT_RE = re.compile(
+    r"(?:ทะเบียน(?:รถ)?|Registration(?:\s*No\.?)?|Plate)\s*[:：]?\s*"
+    r"([0-9]{0,2}\s*[ก-ฮ]{0,2}\s*-?\s*[0-9]{1,4}(?:\s+[ก-๙A-Za-z]+)?)", re.I)
 
 
 def _read_text(path: Path) -> str:
@@ -188,7 +186,7 @@ def extract_with_rules(path: Path) -> dict:
         "year_system": "UNKNOWN",
         "field_confidence": {
             "doc_type": type_conf, "expiry_date": exp_conf,
-            "doc_number": 0.7 if num else 0.0, "holder_name": 0.6 if name else 0.0,
+            "doc_number": 0.7 if num else 0.0, "vehicle_plate": 0.6 if plate else 0.0,
         },
         "notes": "อ่านด้วยกฎ (ไม่มี API key)" if text else "ไม่มีข้อความในไฟล์ — กรุณากรอกข้อมูลเอง",
         "engine": "rules",

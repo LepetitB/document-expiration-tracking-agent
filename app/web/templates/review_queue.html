@@ -5,7 +5,7 @@
 <p class="sub">เอกสารที่ AI ไม่มั่นใจหรือไม่ผ่านกฎตรวจสอบ — ตรวจและยืนยันก่อนเข้าระบบแจ้งเตือน</p>
 <div class="card tbl-wrap">
 <table>
-  <thead><tr><th>#</th><th>ประเภท</th><th>ผู้ถือ</th><th>วันหมดอายุที่อ่านได้</th><th>ความมั่นใจ</th><th></th></tr></thead>
+  <thead><tr><th>#</th><th>ประเภท</th><th>ทะเบียนรถ</th><th>วันหมดอายุที่อ่านได้</th><th>ความมั่นใจ</th><th></th></tr></thead>
   <tbody>
   {% for d in docs %}
     <tr><td>{{ d.id }}</td><td>{{ doc_label(d.doc_type) }}</td><td>{{ d.owner_name }}</td>

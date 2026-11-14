@@ -47,14 +47,12 @@ def test_status_rules():
     assert compute_status({"doc_type": "VEHICLE_TAX", "expiry_date": "2026-11-01"}, today) == "EXPIRED"
     assert compute_status({"doc_type": "VEHICLE_TAX", "expiry_date": "2026-12-01"}, today) == "EXPIRING"
     assert compute_status({"doc_type": "VEHICLE_TAX", "expiry_date": "2027-06-01"}, today) == "VALID"
-    # work permits use a longer 60-day window
-    assert compute_status({"doc_type": "WORK_PERMIT", "expiry_date": "2027-01-05"}, today) == "EXPIRING"
     assert compute_status({"review_status": "PENDING_REVIEW", "expiry_date": "2027-06-01"}, today) == "PENDING_REVIEW"
 
 
 def test_validator_catches_year_errors():
     today = date(2026, 11, 14)
-    good = {"doc_type": "DRIVER_LICENSE", "doc_number": "1", "holder_name": "x",
+    good = {"doc_type": "COMPULSORY_INSURANCE", "doc_number": "1", "vehicle_plate": "70-1234 ชลบุรี",
             "issue_date": date(2022, 1, 15), "expiry_date": date(2027, 1, 15)}
     assert validator.validate(good, today) == []
     # BE year not converted -> 543 years in the future
@@ -67,10 +65,12 @@ def test_validator_catches_year_errors():
 def test_vehicle_doc_requires_plate():
     ex = {"doc_type": "VEHICLE_TAX", "doc_number": "1", "holder_name": "x", "expiry_date": date(2027, 1, 1)}
     assert any("ทะเบียน" in p for p in validator.validate(ex, date(2026, 11, 14)))
+    bad_plate = dict(ex, vehicle_plate="ABC")
+    assert any("รูปแบบทะเบียน" in p for p in validator.validate(bad_plate, date(2026, 11, 14)))
 
 
 def test_confidence_and_review():
-    ex = {"field_confidence": {"doc_type": 0.99, "expiry_date": 0.95, "doc_number": 0.9, "holder_name": 0.92}}
+    ex = {"field_confidence": {"doc_type": 0.99, "expiry_date": 0.95, "doc_number": 0.9, "vehicle_plate": 0.92}}
     assert validator.score(ex, []) == 0.9
     assert validator.score(ex, ["problem"]) == 0.45
     assert not validator.needs_review(0.9, [])

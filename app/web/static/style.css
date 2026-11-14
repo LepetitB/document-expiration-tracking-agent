@@ -80,6 +80,11 @@ tr:hover td { background: #fafbff; }
 .pill.PENDING_REVIEW { background: var(--violet-soft); color: var(--violet); }
 .pill.UNKNOWN { background: var(--grey-soft); color: var(--muted); }
 .muted { color: var(--muted); } .small { font-size: 13px; }
+.matrix td { vertical-align: middle; }
+.cell { display: block; padding: 6px 10px; border-radius: 8px; color: inherit; font-size: 13.5px; line-height: 1.4; }
+.cell:hover { text-decoration: none; filter: brightness(.97); }
+.cell.EXPIRED { background: var(--red-soft); } .cell.EXPIRING { background: var(--amber-soft); }
+.cell.VALID { background: var(--green-soft); } .cell.UNKNOWN { background: var(--grey-soft); }
 .days.neg { color: var(--red); font-weight: 600; } .days.soon { color: var(--amber); font-weight: 600; }
 
 .flash { padding: 10px 14px; border-radius: 9px; margin-bottom: 14px; }
