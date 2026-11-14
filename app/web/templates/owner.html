@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, days with context %}
+{% block content %}
+<p class="small"><a href="{{ url_for('fleet') }}">← รถและคนขับ</a></p>
+{% if owner.owner_type == 'VEHICLE' %}
+  <h1>🚛 รถ {{ owner.name }}</h1>
+  <p class="sub">คนขับประจำ:
+    {% if driver %}<a href="{{ url_for('owner_detail', owner_id=driver.id) }}">{{ driver.name }}</a>{% else %}ยังไม่กำหนด (ตั้งได้ที่หน้า "รถและคนขับ"){% endif %}</p>
+{% else %}
+  <h1>👷 {{ owner.name }}</h1>
+  <p class="sub">📞 {{ owner.phone or '-' }} · LINE {{ owner.line_user_id or '-' }} · ขับรถ:
+    {% for v in vehicles %}<a href="{{ url_for('owner_detail', owner_id=v.id) }}">{{ v.name }}</a>{{ ', ' if not loop.last }}{% else %}-{% endfor %}</p>
+{% endif %}
+
+<div class="card">
+  <h2>เอกสาร ({{ docs|length }} ฉบับ รวมฉบับที่ต่ออายุไปแล้ว)</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>สถานะ</th><th>ประเภท</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
+    <tbody>
+    {% for d in docs %}
+      <tr><td>{{ status_pill(d.status) }}</td><td>{{ doc_label(d.doc_type) }}</td><td class="small">{{ d.doc_number or '-' }}</td>
+        <td>{{ d.expiry_date|thai }}</td><td>{{ days(d) }}</td>
+        <td><a class="btn ghost sm" href="{{ url_for('document_detail', doc_id=d.id) }}">เปิด</a></td></tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">ยังไม่มีเอกสาร — <a href="{{ url_for('upload') }}">อัปโหลดเอกสาร</a> หรือ <a href="{{ url_for('new_document') }}">เพิ่มเอง</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

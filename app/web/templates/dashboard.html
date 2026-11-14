@@ -20,7 +20,7 @@
     <tbody>
     {% for v in vehicles %}
       <tr>
-        <td><b>{{ v.plate }}</b></td>
+        <td><a href="{{ url_for('owner_detail', owner_id=v.owner_id) }}"><b>{{ v.plate }}</b></a></td>
         {% for t in MAIN_DOC_TYPES %}
           {% set d = v.docs.get(t) %}
           <td>{% if t == 'DRIVER_LICENSE' %}<div class="small">👷 {{ v.driver.name if v.driver else 'ไม่มีคนขับประจำ' }}</div>{% endif %}

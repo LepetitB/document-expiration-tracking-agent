@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections import Counter, OrderedDict
 from datetime import date, timedelta
@@ -93,7 +94,10 @@ def vehicle_matrix(docs: list[dict]) -> list[dict]:
         if not cur or (d.get("expiry_date") or "") > (cur.get("expiry_date") or ""):
             target[d["doc_type"]] = d
 
-    by_vehicle: dict[int, dict] = {}
+    # every registered vehicle gets a row — a new vehicle with no documents yet shows as "cannot go out"
+    by_vehicle: dict[int, dict] = {
+        o["id"]: {"owner_id": o["id"], "plate": o["name"], "driver_id": o.get("driver_id"), "docs": {}}
+        for o in db.list_owners() if o["owner_type"] == "VEHICLE"}
     licences: dict[int, dict] = {}  # driver owner_id -> latest licence
     for d in docs:
         if d["status"] in ("PENDING_REVIEW", "RENEWED"):
@@ -260,6 +264,79 @@ def document_detail(doc_id):
     doc = enrich([doc])[0]
     raw = json.loads(doc["raw_extraction"]) if doc.get("raw_extraction") else {}
     return render_template("document_form.html", doc=doc, raw=raw, problems=raw.get("problems", []))
+
+
+# --------------------------------------------------------------------------- fleet: vehicles & drivers
+@app.route("/fleet", methods=["GET", "POST"])
+def fleet():
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add_vehicle":
+            plate = re.sub(r"\s+", " ", request.form.get("plate", "")).strip()
+            province = request.form.get("province", "").strip()
+            if not validator.PLATE_RE.match(plate):
+                flash(f"รูปแบบทะเบียนไม่ถูกต้อง: \"{plate}\" (ตัวอย่าง 70-1234)", "warn")
+            else:
+                ident = plate.split(" ")[0]
+                vid = db.upsert_owner("VEHICLE", f"{ident} {province}".strip(), ident, responsible_person="ฝ่ายธุรการ")
+                if request.form.get("driver_id"):
+                    db.assign_driver(vid, int(request.form["driver_id"]))
+                flash(f"เพิ่มรถ {ident} {province} แล้ว — อัปโหลดเอกสาร ภาษี / พ.ร.บ. / ประกัน ของคันนี้ต่อได้เลย", "ok")
+        elif action == "add_driver":
+            name = request.form.get("name", "").strip()
+            if not name:
+                flash("กรุณาใส่ชื่อคนขับ", "warn")
+            else:
+                did = db.upsert_owner("DRIVER", name, name, responsible_person="ฝ่ายธุรการ")
+                db.set_driver_contact(did, request.form.get("phone"), request.form.get("line_user_id"))
+                flash(f"เพิ่มคนขับ {name} แล้ว — อัปโหลดรูปใบขับขี่ของคนขับคนนี้ต่อได้เลย", "ok")
+        elif action == "assign":
+            vid = int(request.form["vehicle_id"])
+            did = request.form.get("driver_id")
+            db.assign_driver(vid, int(did) if did else None)
+            v = db.get_owner(vid)
+            d = db.get_owner(int(did)) if did else None
+            flash(f"รถ {v['name']}: คนขับประจำ = {d['name'] if d else 'ไม่มี'}", "ok")
+        elif action == "update_driver":
+            db.set_driver_contact(int(request.form["driver_id"]), request.form.get("phone"),
+                                  request.form.get("line_user_id"))
+            flash("บันทึกข้อมูลติดต่อคนขับแล้ว", "ok")
+        return redirect(url_for("fleet"))
+
+    docs = enrich(db.list_documents())
+    status_by_vehicle = {v["owner_id"]: v for v in vehicle_matrix(docs)}
+    owners = db.list_owners()
+    drivers = [o for o in owners if o["owner_type"] == "DRIVER"]
+    names = {d["id"]: d["name"] for d in drivers}
+    licence = {}
+    for d in docs:
+        if d["doc_type"] == "DRIVER_LICENSE" and d["status"] not in ("PENDING_REVIEW", "RENEWED"):
+            cur = licence.get(d["owner_id"])
+            if not cur or (d.get("expiry_date") or "") > (cur.get("expiry_date") or ""):
+                licence[d["owner_id"]] = d
+    vehicles = []
+    for o in owners:
+        if o["owner_type"] != "VEHICLE":
+            continue
+        row = dict(o)
+        row["readiness"] = status_by_vehicle.get(o["id"], {}).get("readiness", "NO_DRIVE")
+        row["n_docs"] = sum(1 for d in docs if d["owner_id"] == o["id"])
+        vehicles.append(row)
+    for d in drivers:
+        d["licence"] = licence.get(d["id"])
+        d["vehicles"] = [v["name"] for v in vehicles if v.get("driver_id") == d["id"]]
+    return render_template("fleet.html", vehicles=vehicles, drivers=drivers, names=names)
+
+
+@app.route("/owners/<int:owner_id>")
+def owner_detail(owner_id):
+    owner = db.get_owner(owner_id)
+    if not owner:
+        abort(404)
+    docs = enrich([d for d in db.list_documents(include_renewed=True) if d["owner_id"] == owner_id])
+    driver = db.get_owner(owner["driver_id"]) if owner.get("driver_id") else None
+    vehicles = db.vehicles_of_driver(owner_id) if owner["owner_type"] == "DRIVER" else []
+    return render_template("owner.html", owner=owner, docs=docs, driver=driver, vehicles=vehicles)
 
 
 # --------------------------------------------------------------------------- chat

@@ -18,7 +18,8 @@
       <a href="{{ url_for('upload') }}" class="{{ 'active' if ep in ('upload',) }}">📤 อัปโหลดเอกสาร</a>
       <a href="{{ url_for('review_queue') }}" class="{{ 'active' if ep in ('review_queue','document_detail') }}">✅ ตรวจทาน
         {% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('new_document') }}" class="{{ 'active' if ep == 'new_document' }}">➕ เพิ่มเอง</a>
+      <a href="{{ url_for('fleet') }}" class="{{ 'active' if ep in ('fleet', 'owner_detail') }}">🚛 รถและคนขับ</a>
+      <a href="{{ url_for('new_document') }}" class="{{ 'active' if ep == 'new_document' }}">➕ เพิ่มเอกสารเอง</a>
       <a href="{{ url_for('chat_page') }}" class="{{ 'active' if ep == 'chat_page' }}">💬 ถาม Agent</a>
       <a href="{{ url_for('alerts') }}" class="{{ 'active' if ep == 'alerts' }}">🔔 แจ้งเตือน</a>
     </nav>

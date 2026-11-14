@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, days with context %}
+{% macro ready(r) -%}
+{% if r == 'NO_DRIVE' %}<span class="pill EXPIRED">⛔ ห้ามออกวิ่ง</span>
+{% elif r == 'RISK' %}<span class="pill EXPIRING">⚠️ ต้องรีบต่อ</span>
+{% else %}<span class="pill VALID">✅ พร้อมวิ่ง</span>{% endif %}
+{%- endmacro %}
+{% block content %}
+<h1>รถและคนขับ</h1>
+<p class="sub">เพิ่มรถใหม่ เพิ่มคนขับ และกำหนดคนขับประจำรถ — ใบขับขี่ของคนขับประจำรถจะถูกนับในสถานะ "พร้อมวิ่ง" ของรถคันนั้น</p>
+
+<div class="grid two" style="margin-bottom:18px">
+  <form class="card" method="post">
+    <h2>🚛 เพิ่มรถใหม่</h2>
+    <input type="hidden" name="action" value="add_vehicle">
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
+      <div class="form-row"><label>ทะเบียนรถ</label><input name="plate" placeholder="เช่น 73-5555" required></div>
+      <div class="form-row"><label>จังหวัด</label><input name="province" placeholder="เช่น ชลบุรี"></div>
+    </div>
+    <div class="form-row"><label>คนขับประจำ (ไม่บังคับ)</label>
+      <select name="driver_id"><option value="">— ยังไม่กำหนด —</option>
+        {% for d in drivers %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></div>
+    <button class="btn">➕ เพิ่มรถ</button>
+    <p class="small muted">จากนั้นไปที่ "อัปโหลดเอกสาร" เพื่อเพิ่มภาษี / พ.ร.บ. / ประกัน ของคันนี้ (ระบบจะผูกให้จากทะเบียน)</p>
+  </form>
+
+  <form class="card" method="post">
+    <h2>👷 เพิ่มคนขับ</h2>
+    <input type="hidden" name="action" value="add_driver">
+    <div class="form-row"><label>ชื่อ-สกุล</label><input name="name" placeholder="เช่น นายสมศักดิ์ ขยันดี" required></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
+      <div class="form-row"><label>เบอร์โทร</label><input name="phone" type="tel" placeholder="08x-xxx-xxxx"></div>
+      <div class="form-row"><label>LINE userId</label><input name="line_user_id" placeholder="Uxxxxxxxx (ได้เมื่อเพิ่มเพื่อน LINE OA)"></div>
+    </div>
+    <button class="btn">➕ เพิ่มคนขับ</button>
+    <p class="small muted">จากนั้นอัปโหลดรูปใบขับขี่ของคนขับคนนี้ ระบบจะผูกให้จากชื่อ</p>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:18px">
+  <h2>รถทั้งหมด ({{ vehicles|length }} คัน)</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>ทะเบียนรถ</th><th>สถานะ</th><th>เอกสาร</th><th>คนขับประจำ</th><th></th></tr></thead>
+    <tbody>
+    {% for v in vehicles %}
+      <tr>
+        <td><a href="{{ url_for('owner_detail', owner_id=v.id) }}"><b>{{ v.name }}</b></a></td>
+        <td>{{ ready(v.readiness) }}</td>
+        <td class="small">{{ v.n_docs }} ฉบับ</td>
+        <td>
+          <form method="post" class="filters" style="margin:0">
+            <input type="hidden" name="action" value="assign"><input type="hidden" name="vehicle_id" value="{{ v.id }}">
+            <select name="driver_id" onchange="this.form.submit()">
+              <option value="">— ไม่มีคนขับประจำ —</option>
+              {% for d in drivers %}<option value="{{ d.id }}" {{ 'selected' if v.driver_id == d.id }}>{{ d.name }}</option>{% endfor %}
+            </select>
+          </form>
+        </td>
+        <td><a class="btn ghost sm" href="{{ url_for('owner_detail', owner_id=v.id) }}">ดูเอกสาร</a></td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">ยังไม่มีรถ</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>คนขับทั้งหมด ({{ drivers|length }} คน)</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>ชื่อ</th><th>ใบขับขี่</th><th>ขับรถ</th><th>เบอร์โทร / LINE</th><th></th></tr></thead>
+    <tbody>
+    {% for d in drivers %}
+      <tr>
+        <td><a href="{{ url_for('owner_detail', owner_id=d.id) }}"><b>{{ d.name }}</b></a></td>
+        <td>{% if d.licence %}{{ status_pill(d.licence.status) }}<br><span class="small">{{ d.licence.expiry_date|thai }} · {{ days(d.licence) }}</span>
+            {% else %}<span class="pill EXPIRED">❌ ยังไม่มีใบขับขี่ในระบบ</span>{% endif %}</td>
+        <td class="small">{{ d.vehicles|join(', ') or '-' }}</td>
+        <td>
+          <form method="post" class="filters" style="margin:0">
+            <input type="hidden" name="action" value="update_driver"><input type="hidden" name="driver_id" value="{{ d.id }}">
+            <input name="phone" value="{{ d.phone or '' }}" placeholder="เบอร์โทร" style="width:130px">
+            <input name="line_user_id" value="{{ d.line_user_id or '' }}" placeholder="LINE userId" style="width:150px">
+            <button class="btn ghost sm">บันทึก</button>
+          </form>
+        </td>
+        <td><a class="btn ghost sm" href="{{ url_for('owner_detail', owner_id=d.id) }}">ดูเอกสาร</a></td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">ยังไม่มีคนขับ</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

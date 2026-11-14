@@ -116,3 +116,31 @@ def test_master_data_cross_check(client):
                                   "holder_name": "Mr. Boonlert Jaingam / นายบุญเลิศ ใจงาม"}) == []
     assert validator.cross_check({"doc_type": "VEHICLE_TAX", "vehicle_plate": "70-1234 ชลบุรี"}) == []
     assert validator.cross_check({"doc_type": "VEHICLE_TAX", "vehicle_plate": "99-9999 ตาก"})
+
+
+def test_fleet_add_vehicle_driver_and_assign(client):
+    from app.core.status import enrich
+    from app.web.server import vehicle_matrix
+
+    assert client.get("/fleet").status_code == 200
+    client.post("/fleet", data={"action": "add_vehicle", "plate": "73-5555", "province": "ชลบุรี"})
+    client.post("/fleet", data={"action": "add_driver", "name": "นายสมศักดิ์ ขยันดี",
+                                "phone": "081-000-0199", "line_user_id": "U-demo-somsak"})
+    owners = {o["name"]: o for o in db.list_owners()}
+    vid, did = owners["73-5555 ชลบุรี"]["id"], owners["นายสมศักดิ์ ขยันดี"]["id"]
+    assert owners["นายสมศักดิ์ ขยันดี"]["phone"] == "081-000-0199"
+    client.post("/fleet", data={"action": "assign", "vehicle_id": vid, "driver_id": did})
+    assert db.get_owner(vid)["driver_id"] == did
+
+    # a new vehicle without documents is listed and cannot go out yet
+    rows = {v["plate"]: v for v in vehicle_matrix(enrich(db.list_documents()))}
+    assert rows["73-5555 ชลบุรี"]["readiness"] == "NO_DRIVE"
+    # its documents attach to it by plate
+    client.post("/documents/new", data={"doc_type": "VEHICLE_TAX", "vehicle_plate": "73-5555 ชลบุรี",
+                                        "doc_number": "T1", "expiry_date": "2027-11-14"})
+    assert any(d["owner_id"] == vid for d in db.list_documents())
+    assert client.get(f"/owners/{vid}").status_code == 200
+    assert client.get(f"/owners/{did}").status_code == 200
+
+    bad = client.post("/fleet", data={"action": "add_vehicle", "plate": "ABC", "province": ""}, follow_redirects=True)
+    assert "รูปแบบทะเบียนไม่ถูกต้อง" in bad.get_data(as_text=True)
