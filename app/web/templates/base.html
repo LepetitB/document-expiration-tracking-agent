@@ -15,11 +15,10 @@
     {% set ep = request.endpoint %}
     <nav class="nav">
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' }}">📊 Dashboard</a>
-      <a href="{{ url_for('upload') }}" class="{{ 'active' if ep in ('upload',) }}">📥 รับรถ / แนบเอกสาร</a>
+      <a href="{{ url_for('vehicles') }}" class="{{ 'active' if ep in ('vehicles', 'upload') or (ep == 'owner_detail' and request.view_args.get('owner_id') and nav_owner_type == 'VEHICLE') }}">🚛 รถ</a>
+      <a href="{{ url_for('drivers') }}" class="{{ 'active' if ep == 'drivers' or (ep == 'owner_detail' and nav_owner_type == 'DRIVER') }}">👷 คนขับ</a>
       <a href="{{ url_for('review_queue') }}" class="{{ 'active' if ep in ('review_queue','document_detail') }}">✅ ตรวจทาน
         {% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('fleet') }}" class="{{ 'active' if ep in ('fleet', 'owner_detail') }}">🚛 รถและคนขับ</a>
-      <a href="{{ url_for('new_document') }}" class="{{ 'active' if ep == 'new_document' }}">➕ เพิ่มเอกสารเอง</a>
       <a href="{{ url_for('chat_page') }}" class="{{ 'active' if ep == 'chat_page' }}">💬 ถาม Agent</a>
       <a href="{{ url_for('alerts') }}" class="{{ 'active' if ep == 'alerts' }}">🔔 แจ้งเตือน</a>
     </nav>
@@ -39,6 +38,23 @@
     {% block content %}{% endblock %}
   </main>
 </div>
+<script>
+// every .drop zone: drag & drop + file list; any form with a drop zone shows a "reading" state on submit
+document.querySelectorAll('.drop').forEach(drop => {
+  const input = drop.querySelector('input[type=file]'), list = drop.querySelector('.filelist');
+  const show = () => list.textContent = [...input.files].map(f => '📄 ' + f.name).join('   ');
+  input.addEventListener('change', show);
+  ['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
+  const form = drop.closest('form');
+  form.addEventListener('submit', ev => {
+    if (form.dataset.needFiles !== undefined && !input.files.length) { ev.preventDefault(); alert('กรุณาแนบเอกสาร'); return; }
+    const btn = form.querySelector('button[type=submit], button:not([type])');
+    if (btn) { btn.disabled = true; btn.textContent = input.files.length ? '⏳ AI กำลังอ่านเอกสาร…' : '⏳ กำลังบันทึก…'; }
+  });
+});
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

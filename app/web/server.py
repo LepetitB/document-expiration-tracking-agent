@@ -38,11 +38,15 @@ def _thai(v):
 @app.context_processor
 def _globals():
     pending = len(db.list_documents(review_status="PENDING_REVIEW"))
+    nav_owner_type = None
+    if request.endpoint == "owner_detail" and request.view_args:
+        o = db.get_owner(request.view_args.get("owner_id"))
+        nav_owner_type = o["owner_type"] if o else None
     return {
         "DOC_TYPES": DOC_TYPES, "OWNER_TYPES": OWNER_TYPES, "STATUS_LABEL": STATUS_LABEL,
         "STATUS_ICON": STATUS_ICON, "doc_label": doc_label, "pending_count": pending,
         "ai_online": config.has_claude_credentials(), "model": config.CLAUDE_MODEL,
-        "today": date.today(),
+        "today": date.today(), "nav_owner_type": nav_owner_type,
     }
 
 
@@ -139,22 +143,10 @@ def vehicle_matrix(docs: list[dict]) -> list[dict]:
 NEW_PLATE_PROBLEM = "ยังไม่มีในระบบ"
 
 
-@app.route("/upload", methods=["GET", "POST"])
-def upload():
-    """Intake: attach a set of documents (e.g. everything that came with a new vehicle).
-
-    The AI reads each file; documents are grouped by vehicle; a new plate becomes a new vehicle when the
-    user ticked "this is a new vehicle"; a driver's licence in the same batch becomes that vehicle's driver.
-    """
-    drivers = [o for o in db.list_owners() if o["owner_type"] == "DRIVER"]
-    if request.method == "GET":
-        return render_template("upload.html", drivers=drivers)
-    engine = request.form.get("engine", "auto")
-    is_new = request.form.get("new_vehicle") == "1"
-    known_vehicles = {o["id"] for o in db.list_owners() if o["owner_type"] == "VEHICLE"}
-
+def _read_files(files, engine: str = "auto") -> tuple[list, list]:
+    """Save uploaded files and let the AI (or the rules engine) read each one."""
     read, errors = [], []
-    for f in request.files.getlist("files"):
+    for f in files:
         if not f or not f.filename:
             continue
         ext = Path(f.filename).suffix.lower()
@@ -170,21 +162,55 @@ def upload():
             ex = extractor.normalise({"doc_type": "OTHER", "field_confidence": {},
                                       "notes": f"อ่านเอกสารไม่สำเร็จ: {e}", "engine": "error"})
         read.append((f.filename, stored, ex))
+    return read, errors
+
+
+def _drop_problem(ex: dict, marker: str) -> None:
+    """Remove an expected problem (e.g. "unknown plate" for a new vehicle) and re-score."""
+    if any(marker in p for p in ex["problems"]):
+        ex["problems"] = [p for p in ex["problems"] if marker not in p]
+        ex["confidence"] = validator.score(ex, ex["problems"])
+        ex["needs_review"] = validator.needs_review(ex["confidence"], ex["problems"])
+
+
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+    """Intake: attach a set of documents (e.g. everything that came with a new vehicle).
+
+    The AI reads each file; documents are grouped by vehicle; a new plate becomes a new vehicle when the
+    user ticked "this is a new vehicle"; a driver's licence in the same batch becomes that vehicle's driver.
+    """
+    if request.method == "GET":
+        return redirect(url_for("vehicles"))
+    engine = request.form.get("engine", "auto")
+    is_new = request.form.get("new_vehicle") == "1"
+    known_vehicles = {o["id"] for o in db.list_owners() if o["owner_type"] == "VEHICLE"}
+
+    read, errors = _read_files(request.files.getlist("files"), engine)
     if not read and not errors:
         flash("กรุณาเลือกไฟล์อย่างน้อย 1 ไฟล์", "warn")
-        return redirect(url_for("upload"))
+        return redirect(request.form.get("back") or url_for("vehicles"))
 
     # the user confirmed this batch is a new vehicle -> an unknown plate is expected, not an error
     if is_new:
         for _, _, ex in read:
-            if ex.get("doc_type") != "DRIVER_LICENSE" and any(NEW_PLATE_PROBLEM in p for p in ex["problems"]):
-                ex["problems"] = [p for p in ex["problems"] if NEW_PLATE_PROBLEM not in p]
-                ex["confidence"] = validator.score(ex, ex["problems"])
-                ex["needs_review"] = validator.needs_review(ex["confidence"], ex["problems"])
+            if ex.get("doc_type") != "DRIVER_LICENSE":
+                _drop_problem(ex, NEW_PLATE_PROBLEM)
 
+    # attached on a vehicle's own page -> the documents belong to that vehicle; a different plate is flagged
+    target = db.get_owner(int(request.form["vehicle_id"])) if request.form.get("vehicle_id") else None
     saved = []  # (filename, doc_id, ex)
     for filename, stored, ex in read:
-        saved.append((filename, _save_extraction(ex, stored), ex))
+        owner_id = None
+        if target and ex.get("doc_type") != "DRIVER_LICENSE":
+            owner_id = target["id"]
+            _drop_problem(ex, NEW_PLATE_PROBLEM)
+            plate = re.sub(r"\s+", "", ex.get("vehicle_plate") or "")
+            if plate and not plate.startswith(target["identifier"].replace(" ", "")):
+                ex["problems"].append(f"ทะเบียนในเอกสาร \"{ex['vehicle_plate']}\" ไม่ตรงกับรถ {target['name']}")
+                ex["confidence"] = validator.score(ex, ex["problems"])
+                ex["needs_review"] = True
+        saved.append((filename, _save_extraction(ex, stored, owner_id), ex))
 
     # group by vehicle
     batch_ids = {doc_id for _, doc_id, _ in saved}
@@ -242,10 +268,10 @@ def _owner_from_form(ex: dict, form) -> int:
     return owner_id
 
 
-def _save_extraction(ex: dict, stored_file: str) -> int:
+def _save_extraction(ex: dict, stored_file: str, owner_id: int | None = None) -> int:
     raw = {k: v for k, v in ex.items() if k not in ("issue_date", "expiry_date")}
     return db.add_document(
-        owner_id=_owner_for(ex), doc_type=ex.get("doc_type") or "OTHER",
+        owner_id=owner_id or _owner_for(ex), doc_type=ex.get("doc_type") or "OTHER",
         doc_number=ex.get("doc_number"), holder_name=ex.get("holder_name"),
         issue_date=ex.get("issue_date"), expiry_date=ex.get("expiry_date"),
         issuing_authority=ex.get("issuing_authority"), file_path=stored_file,
@@ -327,48 +353,12 @@ def document_detail(doc_id):
     return render_template("document_form.html", doc=doc, raw=raw, problems=raw.get("problems", []))
 
 
-# --------------------------------------------------------------------------- fleet: vehicles & drivers
-@app.route("/fleet", methods=["GET", "POST"])
-def fleet():
-    if request.method == "POST":
-        action = request.form.get("action")
-        if action == "add_vehicle":
-            plate = re.sub(r"\s+", " ", request.form.get("plate", "")).strip()
-            province = request.form.get("province", "").strip()
-            if not validator.PLATE_RE.match(plate):
-                flash(f"รูปแบบทะเบียนไม่ถูกต้อง: \"{plate}\" (ตัวอย่าง 70-1234)", "warn")
-            else:
-                ident = plate.split(" ")[0]
-                vid = db.upsert_owner("VEHICLE", f"{ident} {province}".strip(), ident, responsible_person="ฝ่ายธุรการ")
-                if request.form.get("driver_id"):
-                    db.assign_driver(vid, int(request.form["driver_id"]))
-                flash(f"เพิ่มรถ {ident} {province} แล้ว — อัปโหลดเอกสาร ภาษี / พ.ร.บ. / ประกัน ของคันนี้ต่อได้เลย", "ok")
-        elif action == "add_driver":
-            name = request.form.get("name", "").strip()
-            if not name:
-                flash("กรุณาใส่ชื่อคนขับ", "warn")
-            else:
-                did = db.upsert_owner("DRIVER", name, name, responsible_person="ฝ่ายธุรการ")
-                db.set_driver_contact(did, request.form.get("phone"), request.form.get("line_user_id"))
-                flash(f"เพิ่มคนขับ {name} แล้ว — อัปโหลดรูปใบขับขี่ของคนขับคนนี้ต่อได้เลย", "ok")
-        elif action == "assign":
-            vid = int(request.form["vehicle_id"])
-            did = request.form.get("driver_id")
-            db.assign_driver(vid, int(did) if did else None)
-            v = db.get_owner(vid)
-            d = db.get_owner(int(did)) if did else None
-            flash(f"รถ {v['name']}: คนขับประจำ = {d['name'] if d else 'ไม่มี'}", "ok")
-        elif action == "update_driver":
-            db.set_driver_contact(int(request.form["driver_id"]), request.form.get("phone"),
-                                  request.form.get("line_user_id"))
-            flash("บันทึกข้อมูลติดต่อคนขับแล้ว", "ok")
-        return redirect(url_for("fleet"))
-
+# --------------------------------------------------------------------------- vehicles & drivers
+def _fleet_data():
     docs = enrich(db.list_documents())
     status_by_vehicle = {v["owner_id"]: v for v in vehicle_matrix(docs)}
     owners = db.list_owners()
     drivers = [o for o in owners if o["owner_type"] == "DRIVER"]
-    names = {d["id"]: d["name"] for d in drivers}
     licence = {}
     for d in docs:
         if d["doc_type"] == "DRIVER_LICENSE" and d["status"] not in ("PENDING_REVIEW", "RENEWED"):
@@ -380,13 +370,109 @@ def fleet():
         if o["owner_type"] != "VEHICLE":
             continue
         row = dict(o)
-        row["readiness"] = status_by_vehicle.get(o["id"], {}).get("readiness", "NO_DRIVE")
-        row["n_docs"] = sum(1 for d in docs if d["owner_id"] == o["id"])
+        v = status_by_vehicle.get(o["id"], {})
+        row["readiness"] = v.get("readiness", "NO_DRIVE")
+        row["vdocs"] = v.get("docs", {})
         vehicles.append(row)
+    order = {"NO_DRIVE": 0, "RISK": 1, "READY": 2}
+    vehicles.sort(key=lambda r: (order[r["readiness"]], r["name"]))
     for d in drivers:
         d["licence"] = licence.get(d["id"])
         d["vehicles"] = [v["name"] for v in vehicles if v.get("driver_id") == d["id"]]
-    return render_template("fleet.html", vehicles=vehicles, drivers=drivers, names=names)
+    drivers.sort(key=lambda d: (d["licence"] or {}).get("expiry_date") or "0000")
+    return vehicles, drivers
+
+
+@app.route("/fleet")
+def fleet():
+    return redirect(url_for("vehicles"))
+
+
+@app.route("/vehicles", methods=["GET", "POST"])
+def vehicles():
+    """Vehicles: add a vehicle by attaching its documents (the form posts to /upload), list, assign drivers."""
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add_vehicle":  # fallback: type the plate when there are no documents yet
+            plate = re.sub(r"\s+", " ", request.form.get("plate", "")).strip()
+            province = request.form.get("province", "").strip()
+            if not validator.PLATE_RE.match(plate):
+                flash(f"รูปแบบทะเบียนไม่ถูกต้อง: \"{plate}\" (ตัวอย่าง 70-1234)", "warn")
+            else:
+                ident = plate.split(" ")[0]
+                vid = db.upsert_owner("VEHICLE", f"{ident} {province}".strip(), ident, responsible_person="ฝ่ายธุรการ")
+                if request.form.get("driver_id"):
+                    db.assign_driver(vid, int(request.form["driver_id"]))
+                flash(f"เพิ่มรถ {ident} {province} แล้ว — แนบเอกสาร ภาษี / พ.ร.บ. / ประกัน ของคันนี้ได้เลย", "ok")
+                return redirect(url_for("owner_detail", owner_id=vid))
+        elif action == "assign":
+            vid = int(request.form["vehicle_id"])
+            did = request.form.get("driver_id")
+            db.assign_driver(vid, int(did) if did else None)
+            v = db.get_owner(vid)
+            d = db.get_owner(int(did)) if did else None
+            flash(f"รถ {v['name']}: คนขับประจำ = {d['name'] if d else 'ไม่มี'}", "ok")
+        return redirect(request.form.get("back") or url_for("vehicles"))
+    vehicle_rows, driver_rows = _fleet_data()
+    return render_template("vehicles.html", vehicles=vehicle_rows, drivers=driver_rows,
+                           MAIN_DOC_TYPES=[*config.MAIN_DOC_TYPES])
+
+
+@app.route("/drivers", methods=["GET", "POST"])
+def drivers():
+    """Drivers: add a driver together with a photo of the licence (the AI reads name, number, expiry)."""
+    if request.method == "POST":
+        action = request.form.get("action", "add_driver")
+        if action == "update_driver":
+            db.set_driver_contact(int(request.form["driver_id"]), request.form.get("phone"),
+                                  request.form.get("line_user_id"))
+            flash("บันทึกข้อมูลติดต่อคนขับแล้ว", "ok")
+            return redirect(request.form.get("back") or url_for("drivers"))
+
+        existing_id = int(request.form["driver_id"]) if request.form.get("driver_id") else None
+        typed = request.form.get("name", "").strip()
+        read, errors = _read_files(request.files.getlist("files"), request.form.get("engine", "auto"))
+        for e in errors:
+            flash(f"❌ {e['filename']}: {e['error']}", "warn")
+        licences = [r for r in read if r[2].get("doc_type") == "DRIVER_LICENSE"]
+        for filename, _, ex in read:
+            if ex.get("doc_type") != "DRIVER_LICENSE":
+                flash(f"⚠️ {filename} ไม่ใช่ใบขับขี่ (AI อ่านได้เป็น {doc_label(ex.get('doc_type') or 'OTHER')}) "
+                      "— เอกสารรถให้แนบที่หน้า \"รถ\"", "warn")
+        if existing_id:
+            did = existing_id
+        else:
+            name = typed or next((ex.get("holder_name") for _, _, ex in licences if ex.get("holder_name")), "")
+            if not name:
+                flash("กรุณาใส่ชื่อคนขับ หรือแนบรูปใบขับขี่ให้ AI อ่านชื่อ", "warn")
+                return redirect(url_for("drivers"))
+            did = db.upsert_owner("DRIVER", name, name, responsible_person="ฝ่ายธุรการ")
+        db.set_driver_contact(did, request.form.get("phone"), request.form.get("line_user_id"))
+        driver = db.get_owner(did)
+        for _, stored, ex in licences:
+            # the licence is attached to this driver; a new driver is expected to be unknown to the system
+            _drop_problem(ex, "ในระบบ")
+            read_name = (ex.get("holder_name") or "").replace(" ", "")
+            if read_name and driver["name"].replace(" ", "") not in read_name:
+                ex["problems"].append(f"ชื่อบนใบขับขี่ \"{ex['holder_name']}\" ไม่ตรงกับ \"{driver['name']}\"")
+                ex["confidence"] = validator.score(ex, ex["problems"])
+                ex["needs_review"] = True
+            raw = {k: v for k, v in ex.items() if k not in ("issue_date", "expiry_date")}
+            db.add_document(
+                owner_id=did, doc_type="DRIVER_LICENSE", doc_number=ex.get("doc_number"),
+                holder_name=ex.get("holder_name"), issue_date=ex.get("issue_date"),
+                expiry_date=ex.get("expiry_date"), issuing_authority=ex.get("issuing_authority"),
+                file_path=stored, raw_extraction=raw, confidence=ex.get("confidence", 0),
+                review_status="PENDING_REVIEW" if ex.get("needs_review") else "CONFIRMED", notes=ex.get("notes"))
+            exp = to_thai(ex["expiry_date"]) if ex.get("expiry_date") else "อ่านไม่ได้"
+            state = "รอตรวจทาน 🟣" if ex.get("needs_review") else "บันทึกแล้ว ✅"
+            flash(f"📄 AI อ่านใบขับขี่: {ex.get('holder_name') or '-'} · เลขที่ {ex.get('doc_number') or '-'} · "
+                  f"หมดอายุ {exp} — {state}", "ok")
+        if not existing_id:
+            flash(f"เพิ่มคนขับ {driver['name']} แล้ว" + ("" if licences else " (ยังไม่มีใบขับขี่ — แนบได้ที่หน้านี้)"), "ok")
+        return redirect(url_for("owner_detail", owner_id=did))
+    _, driver_rows = _fleet_data()
+    return render_template("drivers.html", drivers=driver_rows)
 
 
 @app.route("/owners/<int:owner_id>")
@@ -397,7 +483,9 @@ def owner_detail(owner_id):
     docs = enrich([d for d in db.list_documents(include_renewed=True) if d["owner_id"] == owner_id])
     driver = db.get_owner(owner["driver_id"]) if owner.get("driver_id") else None
     vehicles = db.vehicles_of_driver(owner_id) if owner["owner_type"] == "DRIVER" else []
-    return render_template("owner.html", owner=owner, docs=docs, driver=driver, vehicles=vehicles)
+    all_drivers = [o for o in db.list_owners() if o["owner_type"] == "DRIVER"]
+    return render_template("owner.html", owner=owner, docs=docs, driver=driver, vehicles=vehicles,
+                           all_drivers=all_drivers)
 
 
 # --------------------------------------------------------------------------- chat

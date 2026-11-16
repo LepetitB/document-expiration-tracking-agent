@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, days, dropzone, engine_select with context %}
+{% block content %}
+<h1>👷 คนขับ</h1>
+<p class="sub">เพิ่มคนขับพร้อมแนบรูปใบขับขี่ — AI อ่านชื่อ เลขที่ และวันหมดอายุให้ แล้วระบบจะส่ง LINE เตือนคนขับเองเมื่อใบขับขี่ใกล้หมด</p>
+
+<form class="card" method="post" enctype="multipart/form-data" style="margin-bottom:18px">
+  <h2>➕ เพิ่มคนขับ — แนบใบขับขี่</h2>
+  <input type="hidden" name="action" value="add_driver">
+  {{ dropzone('ลากรูปใบขับขี่มาวาง หรือคลิกเพื่อเลือก') }}
+  <div class="grid" style="grid-template-columns:repeat(3, 1fr); gap:12px; margin-top:14px">
+    <div class="form-row"><label>ชื่อ-สกุล <span class="muted small">(เว้นว่างได้ — AI อ่านจากใบขับขี่)</span></label>
+      <input name="name" placeholder="เช่น นายสมศักดิ์ ขยันดี"></div>
+    <div class="form-row"><label>เบอร์โทร</label><input name="phone" type="tel" placeholder="08x-xxx-xxxx"></div>
+    <div class="form-row"><label>LINE userId</label><input name="line_user_id" placeholder="ได้เมื่อคนขับเพิ่มเพื่อน LINE OA"></div>
+  </div>
+  <div class="actions" style="align-items:center">
+    {{ engine_select() }}
+    <button class="btn">🔍 อ่านใบขับขี่และเพิ่มคนขับ</button>
+  </div>
+  <p class="small muted" style="margin:10px 0 0">🎬 เดโม: ใช้รูป <code>data/samples/08_driver_license_surachai.png</code> หรือ <code>09_driver_license_boonlert.png</code></p>
+</form>
+
+<div class="card">
+  <h2>คนขับทั้งหมด ({{ drivers|length }} คน)</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>ชื่อ</th><th>ใบขับขี่</th><th>📅 ควรเริ่มต่อ</th><th>ขับรถ</th><th>เบอร์โทร / LINE</th></tr></thead>
+    <tbody>
+    {% for d in drivers %}
+      <tr>
+        <td><a href="{{ url_for('owner_detail', owner_id=d.id) }}"><b>{{ d.name }}</b></a></td>
+        <td>{% if d.licence %}{{ status_pill(d.licence.status) }}<br><span class="small">{{ d.licence.expiry_date|thai }} · {{ days(d.licence) }}</span>
+            {% else %}<span class="pill EXPIRED">❌ ยังไม่มีใบขับขี่</span>{% endif %}</td>
+        <td>{{ d.licence.renew_by|thai if d.licence else '-' }}</td>
+        <td class="small">{{ d.vehicles|join(', ') or '-' }}</td>
+        <td>
+          <form method="post" class="filters" style="margin:0">
+            <input type="hidden" name="action" value="update_driver"><input type="hidden" name="driver_id" value="{{ d.id }}">
+            <input name="phone" value="{{ d.phone or '' }}" placeholder="เบอร์โทร" style="width:125px">
+            <input name="line_user_id" value="{{ d.line_user_id or '' }}" placeholder="LINE userId" style="width:140px">
+            <button class="btn ghost sm">บันทึก</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">ยังไม่มีคนขับ</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

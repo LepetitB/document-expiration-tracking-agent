@@ -1,15 +1,46 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_pill, days with context %}
+{% from "_macros.html" import status_pill, days, dropzone, engine_select with context %}
 {% block content %}
-<p class="small"><a href="{{ url_for('fleet') }}">← รถและคนขับ</a></p>
 {% if owner.owner_type == 'VEHICLE' %}
+  <p class="small"><a href="{{ url_for('vehicles') }}">← รถทั้งหมด</a></p>
   <h1>🚛 รถ {{ owner.name }}</h1>
-  <p class="sub">คนขับประจำ:
-    {% if driver %}<a href="{{ url_for('owner_detail', owner_id=driver.id) }}">{{ driver.name }}</a>{% else %}ยังไม่กำหนด (ตั้งได้ที่หน้า "รถและคนขับ"){% endif %}</p>
+  <form method="post" action="{{ url_for('vehicles') }}" class="filters sub" style="align-items:center">
+    <input type="hidden" name="action" value="assign"><input type="hidden" name="vehicle_id" value="{{ owner.id }}">
+    <input type="hidden" name="back" value="{{ url_for('owner_detail', owner_id=owner.id) }}">
+    👷 คนขับประจำ:
+    <select name="driver_id" onchange="this.form.submit()">
+      <option value="">— ไม่มี —</option>
+      {% for d in all_drivers %}<option value="{{ d.id }}" {{ 'selected' if driver and driver.id == d.id }}>{{ d.name }}</option>{% endfor %}
+    </select>
+    {% if driver %}<a href="{{ url_for('owner_detail', owner_id=driver.id) }}">ดูคนขับ</a>{% endif %}
+  </form>
+
+  <form class="card" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" data-need-files style="margin-bottom:18px">
+    <h2>📎 แนบเอกสารของรถคันนี้ (ต่ออายุ / เพิ่มเติม)</h2>
+    <input type="hidden" name="vehicle_id" value="{{ owner.id }}">
+    <input type="hidden" name="back" value="{{ url_for('owner_detail', owner_id=owner.id) }}">
+    {{ dropzone('ลากรูป ป้ายภาษี / พ.ร.บ. / กรมธรรม์ ฉบับใหม่มาวาง') }}
+    <div class="actions" style="align-items:center">{{ engine_select() }}<button class="btn">🔍 อ่านเอกสาร</button></div>
+    <p class="small muted" style="margin:10px 0 0">ฉบับใหม่จะแทนฉบับเก่าอัตโนมัติ (ฉบับเก่าขึ้นสถานะ "ต่ออายุแล้ว" และเลิกเตือน)</p>
+  </form>
 {% else %}
+  <p class="small"><a href="{{ url_for('drivers') }}">← คนขับทั้งหมด</a></p>
   <h1>👷 {{ owner.name }}</h1>
-  <p class="sub">📞 {{ owner.phone or '-' }} · LINE {{ owner.line_user_id or '-' }} · ขับรถ:
-    {% for v in vehicles %}<a href="{{ url_for('owner_detail', owner_id=v.id) }}">{{ v.name }}</a>{{ ', ' if not loop.last }}{% else %}-{% endfor %}</p>
+  <p class="sub">ขับรถ: {% for v in vehicles %}<a href="{{ url_for('owner_detail', owner_id=v.id) }}">{{ v.name }}</a>{{ ', ' if not loop.last }}{% else %}- (กำหนดได้ที่หน้ารถ){% endfor %}</p>
+  <form method="post" action="{{ url_for('drivers') }}" class="filters">
+    <input type="hidden" name="action" value="update_driver"><input type="hidden" name="driver_id" value="{{ owner.id }}">
+    <input type="hidden" name="back" value="{{ url_for('owner_detail', owner_id=owner.id) }}">
+    📞 <input name="phone" value="{{ owner.phone or '' }}" placeholder="เบอร์โทร" style="width:140px">
+    💬 <input name="line_user_id" value="{{ owner.line_user_id or '' }}" placeholder="LINE userId" style="width:170px">
+    <button class="btn ghost sm">บันทึก</button>
+  </form>
+
+  <form class="card" method="post" action="{{ url_for('drivers') }}" enctype="multipart/form-data" data-need-files style="margin-bottom:18px">
+    <h2>📎 แนบใบขับขี่ (ฉบับใหม่ / ต่ออายุ)</h2>
+    <input type="hidden" name="action" value="add_driver"><input type="hidden" name="driver_id" value="{{ owner.id }}">
+    {{ dropzone('ลากรูปใบขับขี่มาวาง') }}
+    <div class="actions" style="align-items:center">{{ engine_select() }}<button class="btn">🔍 อ่านใบขับขี่</button></div>
+  </form>
 {% endif %}
 
 <div class="card">
@@ -21,9 +52,9 @@
     {% for d in docs %}
       <tr><td>{{ status_pill(d.status) }}</td><td>{{ doc_label(d.doc_type) }}</td><td class="small">{{ d.doc_number or '-' }}</td>
         <td>{{ d.expiry_date|thai }}</td><td>{{ d.renew_by|thai }}</td><td>{{ days(d) }}</td>
-        <td><a class="btn ghost sm" href="{{ url_for('document_detail', doc_id=d.id) }}">เปิด</a></td></tr>
+        <td><a class="btn {{ '' if d.status == 'PENDING_REVIEW' else 'ghost' }} sm" href="{{ url_for('document_detail', doc_id=d.id) }}">{{ 'ตรวจทาน' if d.status == 'PENDING_REVIEW' else 'เปิด' }}</a></td></tr>
     {% else %}
-      <tr><td colspan="7" class="muted">ยังไม่มีเอกสาร — <a href="{{ url_for('upload') }}">อัปโหลดเอกสาร</a> หรือ <a href="{{ url_for('new_document') }}">เพิ่มเอง</a></td></tr>
+      <tr><td colspan="7" class="muted">ยังไม่มีเอกสาร — แนบเอกสารด้านบนได้เลย</td></tr>
     {% endfor %}
     </tbody>
   </table>

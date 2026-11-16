@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, days, dropzone, engine_select with context %}
+{% macro ready(r) -%}
+{% if r == 'NO_DRIVE' %}<span class="pill EXPIRED">⛔ ห้ามออกวิ่ง</span>
+{% elif r == 'RISK' %}<span class="pill EXPIRING">⚠️ ต้องรีบต่อ</span>
+{% else %}<span class="pill VALID">✅ พร้อมวิ่ง</span>{% endif %}
+{%- endmacro %}
+{% block content %}
+<h1>🚛 รถ</h1>
+<p class="sub">เพิ่มรถใหม่ด้วยการแนบเอกสารของรถ — AI อ่านทะเบียน เลขที่ และวันหมดอายุ แล้วสร้างรถพร้อมวันที่ควรเริ่มต่อให้เอง</p>
+
+<form class="card" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" data-need-files style="margin-bottom:18px">
+  <h2>➕ เพิ่มรถใหม่ — แนบเอกสารรถ</h2>
+  <input type="hidden" name="new_vehicle" value="1">
+  <input type="hidden" name="back" value="{{ url_for('vehicles') }}">
+  <div class="steps" style="margin-bottom:14px">
+    <div><b>1</b> แนบเอกสาร<br><span class="small muted">ป้ายภาษี · กรมธรรม์ พ.ร.บ. · กรมธรรม์ประกันภัย</span></div>
+    <div><b>2</b> AI อ่าน<br><span class="small muted">ทะเบียน · เลขที่ · วันหมดอายุ (แปลง พ.ศ.)</span></div>
+    <div><b>3</b> สร้างรถ<br><span class="small muted">จากทะเบียนที่อ่านได้ · ผูกคนขับประจำ</span></div>
+    <div><b>4</b> สรุป<br><span class="small muted">วันหมดอายุ · ควรเริ่มต่อ · เอกสารที่ยังขาด</span></div>
+  </div>
+  {{ dropzone('ลากรูปเอกสารของรถคันใหม่มาวาง หรือคลิกเพื่อเลือก (แนบทั้งชุดได้เลย)') }}
+  <div class="actions" style="align-items:center">
+    <label class="small">คนขับประจำรถ:
+      <select name="driver_id"><option value="">— ยังไม่กำหนด —</option>
+        {% for d in drivers %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></label>
+    {{ engine_select() }}
+    <button class="btn">🔍 อ่านเอกสารและเพิ่มรถ</button>
+  </div>
+  <p class="small muted" style="margin:12px 0 0">🎬 เดโม: แนบทั้ง 3 รูปใน <code>data/samples/new_vehicle_73-5555/</code> · ต่ออายุเอกสารของรถที่มีอยู่แล้ว ให้แนบที่หน้ารถคันนั้น (กดทะเบียนในตารางด้านล่าง)</p>
+</form>
+
+<details class="card" style="margin-bottom:18px">
+  <summary class="small"><b>ยังไม่มีเอกสาร?</b> เพิ่มรถด้วยการพิมพ์ทะเบียน แล้วค่อยแนบเอกสารภายหลัง</summary>
+  <form method="post" class="filters" style="margin:12px 0 0">
+    <input type="hidden" name="action" value="add_vehicle">
+    <input name="plate" placeholder="ทะเบียน เช่น 73-5555" required>
+    <input name="province" placeholder="จังหวัด">
+    <button class="btn ghost sm">เพิ่มรถ</button>
+  </form>
+</details>
+
+<div class="card">
+  <h2>รถทั้งหมด ({{ vehicles|length }} คัน)</h2>
+  <div class="tbl-wrap">
+  <table class="matrix">
+    <thead><tr><th>ทะเบียนรถ</th><th>สถานะ</th>{% for t in MAIN_DOC_TYPES %}<th>{{ doc_label(t).split(' ')[0] }}</th>{% endfor %}<th>คนขับประจำ</th></tr></thead>
+    <tbody>
+    {% for v in vehicles %}
+      <tr>
+        <td><a href="{{ url_for('owner_detail', owner_id=v.id) }}"><b>{{ v.name }}</b></a></td>
+        <td>{{ ready(v.readiness) }}</td>
+        {% for t in MAIN_DOC_TYPES %}{% set d = v.vdocs.get(t) %}
+          <td>{% if d %}<span class="cell {{ d.status }}">{{ STATUS_ICON[d.status] }} {{ d.expiry_date|thai }}<br><span class="small">ต่อ {{ d.renew_by|thai }}</span></span>
+              {% else %}<span class="cell EXPIRED">❌ ไม่มี</span>{% endif %}</td>
+        {% endfor %}
+        <td>
+          <form method="post" style="margin:0">
+            <input type="hidden" name="action" value="assign"><input type="hidden" name="vehicle_id" value="{{ v.id }}">
+            <select name="driver_id" onchange="this.form.submit()">
+              <option value="">— ไม่มี —</option>
+              {% for d in drivers %}<option value="{{ d.id }}" {{ 'selected' if v.driver_id == d.id }}>{{ d.name }}</option>{% endfor %}
+            </select>
+          </form>
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="muted">ยังไม่มีรถ — แนบเอกสารด้านบนเพื่อเพิ่มรถคันแรก</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

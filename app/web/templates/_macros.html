@@ -13,3 +13,22 @@
 {% set p = (v or 0) * 100 %}
 <span class="conf {{ 'hi' if p >= 85 else ('mid' if p >= 60 else 'lo') }}">{{ p|round|int }}%</span>
 {%- endmacro %}
+
+{% macro dropzone(hint='ลากรูปเอกสารมาวาง หรือคลิกเพื่อเลือก (เลือกได้หลายไฟล์)') -%}
+<label class="drop">
+  <div class="big">📎</div>
+  <div><b>{{ hint }}</b></div>
+  <div class="small muted">รูปถ่าย / สแกน / PDF · AI จะอ่านให้อัตโนมัติ</div>
+  <input type="file" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" hidden>
+  <div class="filelist small muted"></div>
+</label>
+{%- endmacro %}
+
+{% macro engine_select() -%}
+<label class="small">วิธีอ่าน:
+  <select name="engine">
+    <option value="auto">อัตโนมัติ ({{ 'Claude Vision' if ai_online else 'ระบบกฎ — ไม่มี API key' }})</option>
+    <option value="rules">ระบบกฎ (baseline)</option>
+  </select>
+</label>
+{%- endmacro %}

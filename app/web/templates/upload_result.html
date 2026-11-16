@@ -17,7 +17,7 @@
     {% if g.is_new %}<span class="pill RENEWED">🆕 รถใหม่ — สร้างแล้ว</span>{% endif %}
     {{ ready(g.readiness) }}</h2>
   <p class="small">👷 คนขับประจำ: {{ g.driver.name if g.driver else 'ยังไม่กำหนด' }}
-    {% if not g.driver %}· <a href="{{ url_for('fleet') }}">กำหนดคนขับ</a>{% endif %}</p>
+    {% if not g.driver %}· <a href="{{ url_for('owner_detail', owner_id=g.owner.id) }}">กำหนดคนขับ</a>{% endif %}</p>
 
   <div class="checklist">
     {% for t in ['VEHICLE_TAX','COMPULSORY_INSURANCE','VEHICLE_INSURANCE'] + (['DRIVER_LICENSE'] if g.driver else []) %}
@@ -76,5 +76,5 @@
   </div>
 </details>
 
-<div class="actions"><a class="btn ghost" href="{{ url_for('upload') }}">แนบเอกสารเพิ่ม</a><a class="btn" href="{{ url_for('dashboard') }}">ไป Dashboard</a></div>
+<div class="actions"><a class="btn ghost" href="{{ request.form.get('back') or url_for('vehicles') }}">← กลับ / แนบเอกสารเพิ่ม</a><a class="btn" href="{{ url_for('dashboard') }}">ไป Dashboard</a></div>
 {% endblock %}

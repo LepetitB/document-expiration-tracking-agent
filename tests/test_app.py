@@ -28,7 +28,7 @@ def client():
 
 
 def test_pages_render(client):
-    for url in ["/", "/upload", "/review", "/documents/new", "/chat", "/alerts", "/?status=EXPIRED"]:
+    for url in ["/", "/vehicles", "/drivers", "/review", "/documents/new", "/chat", "/alerts", "/?status=EXPIRED"]:
         r = client.get(url)
         assert r.status_code == 200, url
 
@@ -122,14 +122,14 @@ def test_fleet_add_vehicle_driver_and_assign(client):
     from app.core.status import enrich
     from app.web.server import vehicle_matrix
 
-    assert client.get("/fleet").status_code == 200
-    client.post("/fleet", data={"action": "add_vehicle", "plate": "73-5555", "province": "ชลบุรี"})
-    client.post("/fleet", data={"action": "add_driver", "name": "นายสมศักดิ์ ขยันดี",
-                                "phone": "081-000-0199", "line_user_id": "U-demo-somsak"})
+    assert client.get("/fleet").status_code == 302 and client.get("/upload").status_code == 302
+    client.post("/vehicles", data={"action": "add_vehicle", "plate": "73-5555", "province": "ชลบุรี"})
+    client.post("/drivers", data={"action": "add_driver", "name": "นายสมศักดิ์ ขยันดี",
+                                  "phone": "081-000-0199", "line_user_id": "U-demo-somsak"})
     owners = {o["name"]: o for o in db.list_owners()}
     vid, did = owners["73-5555 ชลบุรี"]["id"], owners["นายสมศักดิ์ ขยันดี"]["id"]
     assert owners["นายสมศักดิ์ ขยันดี"]["phone"] == "081-000-0199"
-    client.post("/fleet", data={"action": "assign", "vehicle_id": vid, "driver_id": did})
+    client.post("/vehicles", data={"action": "assign", "vehicle_id": vid, "driver_id": did})
     assert db.get_owner(vid)["driver_id"] == did
 
     # a new vehicle without documents is listed and cannot go out yet
@@ -142,7 +142,7 @@ def test_fleet_add_vehicle_driver_and_assign(client):
     assert client.get(f"/owners/{vid}").status_code == 200
     assert client.get(f"/owners/{did}").status_code == 200
 
-    bad = client.post("/fleet", data={"action": "add_vehicle", "plate": "ABC", "province": ""}, follow_redirects=True)
+    bad = client.post("/vehicles", data={"action": "add_vehicle", "plate": "ABC", "province": ""}, follow_redirects=True)
     assert "รูปแบบทะเบียนไม่ถูกต้อง" in bad.get_data(as_text=True)
 
 
@@ -169,3 +169,35 @@ def test_new_vehicle_intake_creates_vehicle_and_summary(client):
     # "new vehicle" was ticked, so the unknown plate is not reported as a problem
     import json
     assert not any("ยังไม่มีในระบบ" in p for d in docs for p in json.loads(d["raw_extraction"])["problems"])
+
+
+
+def test_add_driver_with_licence_photo(client):
+    """New driver: no name typed -> the AI (rules engine here) reads it from the licence."""
+    licence = ("ใบอนุญาตขับรถยนต์ ท.2\nฉบับที่ 65055501\nชื่อ นายสมศักดิ์ ขยันดี\n"
+               "วันอนุญาต 1 มกราคม 2566\nวันสิ้นอายุ 1 มกราคม 2571").encode("utf-8")
+    r = client.post("/drivers", data={"action": "add_driver", "engine": "rules", "phone": "081-000-0199",
+                                      "files": (io.BytesIO(licence), "licence.txt")},
+                    content_type="multipart/form-data", follow_redirects=True)
+    assert r.status_code == 200
+    driver = next(o for o in db.list_owners() if o["name"] == "นายสมศักดิ์ ขยันดี")
+    assert driver["owner_type"] == "DRIVER" and driver["phone"] == "081-000-0199"
+    lic = [d for d in db.list_documents() if d["owner_id"] == driver["id"]]
+    assert lic and lic[0]["doc_type"] == "DRIVER_LICENSE" and lic[0]["expiry_date"] == "2028-01-01"
+    import json
+    assert not any("ในระบบ" in p for p in json.loads(lic[0]["raw_extraction"])["problems"])
+
+
+def test_attach_renewal_on_vehicle_page(client):
+    vehicle = next(o for o in db.list_owners() if o["identifier"] == "71-0099")
+    old = next(d for d in db.list_documents() if d["owner_id"] == vehicle["id"] and d["doc_type"] == "COMPULSORY_INSURANCE")
+    prb = ("กรมธรรม์ประกันภัยคุ้มครองผู้ประสบภัยจากรถ (พ.ร.บ.)\nกรมธรรม์เลขที่ CMI-NEW-0099\n"
+           "ทะเบียนรถ 71-0099 ระยอง\nระยะเวลาประกันภัย เริ่มต้น 14 พ.ย. 2569 สิ้นสุด 14 พ.ย. 2570").encode("utf-8")
+    client.post("/upload", data={"engine": "rules", "vehicle_id": vehicle["id"],
+                                 "files": (io.BytesIO(prb), "prb.txt")}, content_type="multipart/form-data")
+    new = next(d for d in db.list_documents(include_renewed=True) if d.get("doc_number") == "CMI-NEW-0099")
+    assert new["owner_id"] == vehicle["id"]
+    # rules engine is never confident enough to auto-confirm; confirming it supersedes the old พ.ร.บ.
+    client.post(f"/documents/{new['id']}", data={"doc_type": "COMPULSORY_INSURANCE", "vehicle_plate": "71-0099 ระยอง",
+                                                 "doc_number": "CMI-NEW-0099", "expiry_date": "2027-11-14"})
+    assert db.get_document(old["id"])["renewed"] == 1
