@@ -15,7 +15,7 @@
     {% set ep = request.endpoint %}
     <nav class="nav">
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' }}">📊 Dashboard</a>
-      <a href="{{ url_for('upload') }}" class="{{ 'active' if ep in ('upload',) }}">📤 อัปโหลดเอกสาร</a>
+      <a href="{{ url_for('upload') }}" class="{{ 'active' if ep in ('upload',) }}">📥 รับรถ / แนบเอกสาร</a>
       <a href="{{ url_for('review_queue') }}" class="{{ 'active' if ep in ('review_queue','document_detail') }}">✅ ตรวจทาน
         {% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
       <a href="{{ url_for('fleet') }}" class="{{ 'active' if ep in ('fleet', 'owner_detail') }}">🚛 รถและคนขับ</a>

@@ -27,8 +27,8 @@ def validate(ex: dict, today: date | None = None) -> list[str]:
             problems.append("วันหมดอายุไกลเกิน 12 ปี — อาจอ่านปี พ.ศ./ค.ศ. ผิด")
         if expiry < today - timedelta(days=365 * 5):
             problems.append("วันหมดอายุผ่านมาเกิน 5 ปี — อาจอ่านปีผิด")
-    if issue and issue > today + timedelta(days=1):
-        problems.append("วันออกเอกสารอยู่ในอนาคต")
+    if issue and issue > today + timedelta(days=90):  # policies may start a little in the future
+        problems.append("วันออกเอกสาร / วันเริ่มคุ้มครองไกลเกินไปในอนาคต — อาจอ่านปีผิด")
     if not ex.get("doc_number"):
         problems.append("ไม่พบเลขที่เอกสาร")
     if ex.get("doc_type") == "DRIVER_LICENSE":

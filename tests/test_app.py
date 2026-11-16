@@ -38,7 +38,7 @@ def test_upload_text_document(client):
     r = client.post("/upload", data={"engine": "rules", "files": (io.BytesIO(data), "policy.txt")},
                     content_type="multipart/form-data")
     assert r.status_code == 200
-    assert "2027-02-18" in r.get_data(as_text=True)
+    assert "18 ก.พ. 2570" in r.get_data(as_text=True)
     pending = db.list_documents(review_status="PENDING_REVIEW")
     assert pending and pending[0]["expiry_date"] == "2027-02-18"
     assert pending[0]["owner_identifier"] == "70-1234"  # linked to the existing vehicle
@@ -144,3 +144,28 @@ def test_fleet_add_vehicle_driver_and_assign(client):
 
     bad = client.post("/fleet", data={"action": "add_vehicle", "plate": "ABC", "province": ""}, follow_redirects=True)
     assert "รูปแบบทะเบียนไม่ถูกต้อง" in bad.get_data(as_text=True)
+
+
+def test_new_vehicle_intake_creates_vehicle_and_summary(client):
+    tax = ("เครื่องหมายแสดงการเสียภาษีรถ\nทะเบียน 73-5555 ชลบุรี\nเลขที่ 7355550\n"
+           "วันครบกำหนดเสียภาษี / หมดอายุ 10/03/2570").encode("utf-8")
+    prb = ("กรมธรรม์ประกันภัยคุ้มครองผู้ประสบภัยจากรถ (พ.ร.บ.)\nกรมธรรม์เลขที่ CMI-735555\n"
+           "ทะเบียนรถ 73-5555 ชลบุรี\nระยะเวลาประกันภัย เริ่มต้น 10 มี.ค. 2569 สิ้นสุด 10 มี.ค. 2570").encode("utf-8")
+    licence = (SAMPLES / "08_driver_license_surachai.txt").read_bytes()
+    r = client.post("/upload", data={"engine": "rules", "new_vehicle": "1",
+                                     "files": [(io.BytesIO(tax), "tax.txt"), (io.BytesIO(prb), "prb.txt"),
+                                               (io.BytesIO(licence), "licence.txt")]},
+                    content_type="multipart/form-data")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "73-5555 ชลบุรี" in html and "รถใหม่" in html
+    assert "ยังไม่มีประกันภัยรถ" in html          # checklist shows the missing insurance
+    assert "ควรเริ่มต่อ" in html
+    vehicle = next(o for o in db.list_owners() if o["name"] == "73-5555 ชลบุรี")
+    driver = next(o for o in db.list_owners() if o["name"] == "นายสุรชัย พึ่งบุญ")
+    assert vehicle["driver_id"] == driver["id"]     # licence in the batch -> regular driver
+    docs = [d for d in db.list_documents() if d["owner_id"] == vehicle["id"]]
+    assert {d["doc_type"] for d in docs} == {"VEHICLE_TAX", "COMPULSORY_INSURANCE"}
+    # "new vehicle" was ticked, so the unknown plate is not reported as a problem
+    import json
+    assert not any("ยังไม่มีในระบบ" in p for d in docs for p in json.loads(d["raw_extraction"])["problems"])

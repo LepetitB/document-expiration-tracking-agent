@@ -19,6 +19,7 @@ def _brief(d: dict) -> dict:
         "owner_identifier": d.get("owner_identifier"),
         "doc_number": d.get("doc_number"),
         "expiry_date": to_thai(date.fromisoformat(d["expiry_date"])) if d.get("expiry_date") else None,
+        "renew_by": to_thai(date.fromisoformat(d["renew_by"])) if d.get("renew_by") else None,
         "days_left": d.get("days_left"),
         "status": STATUS_LABEL[d["status"]],
     }

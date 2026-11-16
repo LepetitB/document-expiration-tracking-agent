@@ -16,14 +16,14 @@
   <h2>เอกสาร ({{ docs|length }} ฉบับ รวมฉบับที่ต่ออายุไปแล้ว)</h2>
   <div class="tbl-wrap">
   <table>
-    <thead><tr><th>สถานะ</th><th>ประเภท</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
+    <thead><tr><th>สถานะ</th><th>ประเภท</th><th>เลขที่</th><th>วันหมดอายุ</th><th>📅 ควรเริ่มต่อ</th><th>คงเหลือ</th><th></th></tr></thead>
     <tbody>
     {% for d in docs %}
       <tr><td>{{ status_pill(d.status) }}</td><td>{{ doc_label(d.doc_type) }}</td><td class="small">{{ d.doc_number or '-' }}</td>
-        <td>{{ d.expiry_date|thai }}</td><td>{{ days(d) }}</td>
+        <td>{{ d.expiry_date|thai }}</td><td>{{ d.renew_by|thai }}</td><td>{{ days(d) }}</td>
         <td><a class="btn ghost sm" href="{{ url_for('document_detail', doc_id=d.id) }}">เปิด</a></td></tr>
     {% else %}
-      <tr><td colspan="6" class="muted">ยังไม่มีเอกสาร — <a href="{{ url_for('upload') }}">อัปโหลดเอกสาร</a> หรือ <a href="{{ url_for('new_document') }}">เพิ่มเอง</a></td></tr>
+      <tr><td colspan="7" class="muted">ยังไม่มีเอกสาร — <a href="{{ url_for('upload') }}">อัปโหลดเอกสาร</a> หรือ <a href="{{ url_for('new_document') }}">เพิ่มเอง</a></td></tr>
     {% endfor %}
     </tbody>
   </table>

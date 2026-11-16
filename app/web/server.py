@@ -136,18 +136,30 @@ def vehicle_matrix(docs: list[dict]) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- upload
+NEW_PLATE_PROBLEM = "ยังไม่มีในระบบ"
+
+
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
+    """Intake: attach a set of documents (e.g. everything that came with a new vehicle).
+
+    The AI reads each file; documents are grouped by vehicle; a new plate becomes a new vehicle when the
+    user ticked "this is a new vehicle"; a driver's licence in the same batch becomes that vehicle's driver.
+    """
+    drivers = [o for o in db.list_owners() if o["owner_type"] == "DRIVER"]
     if request.method == "GET":
-        return render_template("upload.html")
+        return render_template("upload.html", drivers=drivers)
     engine = request.form.get("engine", "auto")
-    results = []
+    is_new = request.form.get("new_vehicle") == "1"
+    known_vehicles = {o["id"] for o in db.list_owners() if o["owner_type"] == "VEHICLE"}
+
+    read, errors = [], []
     for f in request.files.getlist("files"):
         if not f or not f.filename:
             continue
         ext = Path(f.filename).suffix.lower()
         if ext not in ALLOWED_EXT:
-            results.append({"filename": f.filename, "error": f"ไม่รองรับไฟล์ {ext}"})
+            errors.append({"filename": f.filename, "error": f"ไม่รองรับไฟล์ {ext}"})
             continue
         stored = f"{uuid.uuid4().hex[:8]}_{secure_filename(f.filename) or 'file' + ext}"
         path = config.UPLOAD_DIR / stored
@@ -157,12 +169,61 @@ def upload():
         except Exception as e:
             ex = extractor.normalise({"doc_type": "OTHER", "field_confidence": {},
                                       "notes": f"อ่านเอกสารไม่สำเร็จ: {e}", "engine": "error"})
-        doc_id = _save_extraction(ex, stored)
-        results.append({"filename": f.filename, "id": doc_id, "ex": ex})
-    if not results:
+        read.append((f.filename, stored, ex))
+    if not read and not errors:
         flash("กรุณาเลือกไฟล์อย่างน้อย 1 ไฟล์", "warn")
         return redirect(url_for("upload"))
-    return render_template("upload_result.html", results=results)
+
+    # the user confirmed this batch is a new vehicle -> an unknown plate is expected, not an error
+    if is_new:
+        for _, _, ex in read:
+            if ex.get("doc_type") != "DRIVER_LICENSE" and any(NEW_PLATE_PROBLEM in p for p in ex["problems"]):
+                ex["problems"] = [p for p in ex["problems"] if NEW_PLATE_PROBLEM not in p]
+                ex["confidence"] = validator.score(ex, ex["problems"])
+                ex["needs_review"] = validator.needs_review(ex["confidence"], ex["problems"])
+
+    saved = []  # (filename, doc_id, ex)
+    for filename, stored, ex in read:
+        saved.append((filename, _save_extraction(ex, stored), ex))
+
+    # group by vehicle
+    batch_ids = {doc_id for _, doc_id, _ in saved}
+    vehicle_ids, licence_owner_ids = [], []
+    for _, doc_id, ex in saved:
+        doc = db.get_document(doc_id)
+        target = licence_owner_ids if doc["owner_type"] == "DRIVER" else vehicle_ids
+        if doc["owner_id"] not in target:
+            target.append(doc["owner_id"])
+    # driver for the vehicle(s): chosen in the form, or a licence attached in the same batch
+    chosen = request.form.get("driver_id")
+    driver_id = int(chosen) if chosen else (licence_owner_ids[0] if len(licence_owner_ids) == 1 else None)
+    if driver_id:
+        for vid in vehicle_ids:
+            if not db.get_owner(vid).get("driver_id") or chosen:
+                db.assign_driver(vid, driver_id)
+
+    all_docs = enrich(db.list_documents())
+    matrix = {v["owner_id"]: v for v in vehicle_matrix(all_docs)}
+    groups = []
+    for vid in vehicle_ids:
+        owner = db.get_owner(vid)
+        docs = [d for d in all_docs if d["owner_id"] == vid]
+        drv = db.get_owner(owner["driver_id"]) if owner.get("driver_id") else None
+        if drv:
+            docs += [d for d in all_docs if d["owner_id"] == drv["id"]]
+        docs.sort(key=lambda d: d.get("expiry_date") or "9999")
+        have = {d["doc_type"] for d in docs if d["status"] != "PENDING_REVIEW"}
+        groups.append({
+            "owner": owner, "is_new": vid not in known_vehicles, "driver": drv, "docs": docs,
+            "readiness": matrix.get(vid, {}).get("readiness", "NO_DRIVE"),
+            "missing": [t for t in [*config.MAIN_DOC_TYPES, *(["DRIVER_LICENSE"] if drv else [])] if t not in have],
+            "pending_types": {d["doc_type"] for d in docs if d["status"] == "PENDING_REVIEW"},
+            "pending": [d for d in docs if d["status"] == "PENDING_REVIEW"],
+        })
+    other = [(fn, did, ex) for fn, did, ex in saved
+             if db.get_document(did)["owner_type"] == "DRIVER" and not vehicle_ids]
+    return render_template("upload_result.html", groups=groups, saved=saved, errors=errors,
+                           batch_ids=batch_ids, other=other)
 
 
 def _owner_for(ex: dict, email: str | None = None) -> int:

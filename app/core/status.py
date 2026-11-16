@@ -1,7 +1,7 @@
 """Expiry status rules."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from app.config import DOC_TYPES
 
@@ -46,8 +46,19 @@ def compute_status(doc: dict, today: date | None = None) -> str:
     return "EXPIRING" if left <= window else "VALID"
 
 
+def renew_by(doc: dict) -> date | None:
+    """Date the renewal should start: expiry minus the doc type's "expiring soon" window (default 30 days)."""
+    exp = _as_date(doc.get("expiry_date"))
+    if not exp:
+        return None
+    window = DOC_TYPES.get(doc.get("doc_type", ""), ("", "", 30))[2]
+    return exp - timedelta(days=window)
+
+
 def enrich(docs: list[dict], today: date | None = None) -> list[dict]:
     for d in docs:
         d["days_left"] = days_left(d, today)
         d["status"] = compute_status(d, today)
+        rb = renew_by(d)
+        d["renew_by"] = rb.isoformat() if rb else None
     return docs

@@ -27,7 +27,9 @@ def build_message(doc: dict) -> str:
              else f"รถทะเบียน {doc.get('owner_name') or '-'}")
     return (f"⚠️ {doc_label(doc['doc_type'])} {whose} {_when(doc['days_left'])} "
             f"(วันหมดอายุ {to_thai(date.fromisoformat(doc['expiry_date']))}) "
-            f"เลขที่ {doc.get('doc_number') or '-'} — กรุณาดำเนินการต่ออายุ")
+            f"เลขที่ {doc.get('doc_number') or '-'} — กรุณาดำเนินการต่ออายุ"
+            + (f" (ควรเริ่มต่อตั้งแต่ {to_thai(date.fromisoformat(doc['renew_by']))})"
+               if doc.get("renew_by") and doc["days_left"] > 0 else ""))
 
 
 def driver_alert(doc: dict) -> tuple[dict, str] | None:

@@ -1,33 +1,80 @@
 {% extends "base.html" %}
-{% from "_macros.html" import conf with context %}
+{% from "_macros.html" import status_pill, days, conf with context %}
+{% macro ready(r) -%}
+{% if r == 'NO_DRIVE' %}<span class="pill EXPIRED">⛔ ห้ามออกวิ่ง</span>
+{% elif r == 'RISK' %}<span class="pill EXPIRING">⚠️ ต้องรีบต่อ</span>
+{% else %}<span class="pill VALID">✅ พร้อมวิ่ง</span>{% endif %}
+{%- endmacro %}
 {% block content %}
 <h1>ผลการอ่านเอกสาร</h1>
-<p class="sub">เอกสารที่ AI มั่นใจ ≥ 85% และผ่านกฎตรวจสอบจะถูกบันทึกทันที ที่เหลือจะส่งเข้าคิว "ตรวจทาน"</p>
-<div class="card tbl-wrap">
-<table>
-  <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>ทะเบียนรถ</th><th>วันหมดอายุ (ดิบ → แปลงแล้ว)</th><th>ความมั่นใจ</th><th>ผล</th><th></th></tr></thead>
-  <tbody>
-  {% for r in results %}
-    {% if r.error %}
-      <tr><td>{{ r.filename }}</td><td colspan="6" class="muted">❌ {{ r.error }}</td></tr>
-    {% else %}
-      {% set ex = r.ex %}
-      <tr>
-        <td class="small">{{ r.filename }}<br><span class="muted">{{ ex.engine }}</span></td>
-        <td>{{ doc_label(ex.doc_type or 'OTHER') }}</td>
-        <td>{{ ex.vehicle_plate or '-' }}</td>
-        <td><span class="muted small">{{ ex.expiry_date_raw or '-' }}</span><br>→ <b>{{ ex.expiry_date|thai }}</b>
-          {% if ex.expiry_date %}<span class="small muted">({{ ex.expiry_date }})</span>{% endif %}</td>
-        <td>{{ conf(ex.confidence) }}</td>
-        <td>{% if ex.needs_review %}<span class="pill PENDING_REVIEW">🟣 รอตรวจทาน</span>
-            <div class="small muted">{{ ex.problems|join(', ') }}</div>
-            {% else %}<span class="pill VALID">✅ บันทึกแล้ว</span>{% endif %}</td>
-        <td><a class="btn {{ '' if ex.needs_review else 'ghost' }} sm" href="{{ url_for('document_detail', doc_id=r.id) }}">{{ 'ตรวจทาน' if ex.needs_review else 'ดู' }}</a></td>
+<p class="sub">AI อ่านเอกสาร {{ saved|length }} ไฟล์ แล้วจัดเข้ารถให้แล้ว — แถวสีฟ้าคือเอกสารที่เพิ่งแนบ · เอกสารที่ AI ไม่มั่นใจจะรอให้คนตรวจก่อน</p>
+
+{% for e in errors %}<div class="flash warn">❌ {{ e.filename }}: {{ e.error }}</div>{% endfor %}
+
+{% for g in groups %}
+<div class="card vcard">
+  <h2>🚛 <a href="{{ url_for('owner_detail', owner_id=g.owner.id) }}">{{ g.owner.name }}</a>
+    {% if g.is_new %}<span class="pill RENEWED">🆕 รถใหม่ — สร้างแล้ว</span>{% endif %}
+    {{ ready(g.readiness) }}</h2>
+  <p class="small">👷 คนขับประจำ: {{ g.driver.name if g.driver else 'ยังไม่กำหนด' }}
+    {% if not g.driver %}· <a href="{{ url_for('fleet') }}">กำหนดคนขับ</a>{% endif %}</p>
+
+  <div class="checklist">
+    {% for t in ['VEHICLE_TAX','COMPULSORY_INSURANCE','VEHICLE_INSURANCE'] + (['DRIVER_LICENSE'] if g.driver else []) %}
+      {% if t in g.missing and t in g.pending_types %}<span class="pill PENDING_REVIEW">🟣 {{ doc_label(t) }} (รอตรวจ)</span>
+      {% elif t in g.missing %}<span class="pill EXPIRED">❌ ยังไม่มี{{ doc_label(t) }}</span>
+      {% else %}<span class="pill VALID">✅ {{ doc_label(t) }}</span>{% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>เอกสาร</th><th>เลขที่</th><th>วันหมดอายุ</th><th>📅 ควรเริ่มต่อ</th><th>คงเหลือ</th><th>สถานะ</th><th></th></tr></thead>
+    <tbody>
+    {% for d in g.docs %}
+      <tr class="{{ 'new' if d.id in batch_ids }}">
+        <td>{{ '👷 ' if d.owner_type == 'DRIVER' }}{{ doc_label(d.doc_type) }}{% if d.id in batch_ids %} <span class="small muted">(เพิ่งแนบ)</span>{% endif %}</td>
+        <td class="small">{{ d.doc_number or '-' }}</td>
+        <td>{{ d.expiry_date|thai }}</td>
+        <td>{{ d.renew_by|thai }}</td>
+        <td>{{ days(d) }}</td>
+        <td>{{ status_pill(d.status) }}</td>
+        <td><a class="btn {{ '' if d.status == 'PENDING_REVIEW' else 'ghost' }} sm" href="{{ url_for('document_detail', doc_id=d.id) }}">{{ 'ตรวจทาน' if d.status == 'PENDING_REVIEW' else 'ดู' }}</a></td>
       </tr>
-    {% endif %}
-  {% endfor %}
-  </tbody>
-</table>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if g.pending %}<p class="small" style="margin-top:10px">🟣 มี {{ g.pending|length }} ฉบับที่ AI ไม่มั่นใจ — กด "ตรวจทาน" เพื่อยืนยันก่อนเข้าระบบแจ้งเตือน</p>{% endif %}
 </div>
-<div class="actions"><a class="btn ghost" href="{{ url_for('upload') }}">อัปโหลดเพิ่ม</a><a class="btn" href="{{ url_for('dashboard') }}">ไป Dashboard</a></div>
+{% endfor %}
+
+{% if other %}
+<div class="card vcard">
+  <h2>👷 ใบขับขี่ที่แนบมา</h2>
+  <ul class="plain">{% for fn, did, ex in other %}
+    <li><a href="{{ url_for('document_detail', doc_id=did) }}">{{ ex.holder_name or fn }}</a> — หมดอายุ {{ ex.expiry_date|thai }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<details class="card" style="margin-bottom:16px">
+  <summary><b>รายละเอียดการอ่านแต่ละไฟล์</b> (ข้อความวันที่ดิบ → แปลงแล้ว, ความมั่นใจ)</summary>
+  <div class="tbl-wrap" style="margin-top:10px">
+  <table>
+    <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>ทะเบียน / ชื่อ</th><th>วันหมดอายุ (ดิบ → แปลง)</th><th>ความมั่นใจ</th><th>ข้อสังเกต</th></tr></thead>
+    <tbody>
+    {% for fn, did, ex in saved %}
+      <tr><td class="small">{{ fn }}<br><span class="muted">{{ ex.engine }}</span></td>
+        <td>{{ doc_label(ex.doc_type or 'OTHER') }}</td>
+        <td>{{ ex.vehicle_plate or ex.holder_name or '-' }}</td>
+        <td><span class="muted small">{{ ex.expiry_date_raw or '-' }}</span><br>→ <b>{{ ex.expiry_date|thai }}</b></td>
+        <td>{{ conf(ex.confidence) }}</td>
+        <td class="small">{{ ex.problems|join(', ') or '-' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+
+<div class="actions"><a class="btn ghost" href="{{ url_for('upload') }}">แนบเอกสารเพิ่ม</a><a class="btn" href="{{ url_for('dashboard') }}">ไป Dashboard</a></div>
 {% endblock %}

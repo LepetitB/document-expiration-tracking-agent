@@ -12,7 +12,7 @@
 
 {% if doc %}
   <h1>{{ doc_label(doc.doc_type) }} {{ status_pill(doc.status) }}</h1>
-  <p class="sub">{{ doc.owner_name }} · {{ days(doc) }} · บันทึกเมื่อ {{ doc.created_at[:16].replace('T',' ') }}</p>
+  <p class="sub">{{ doc.owner_name }} · {{ days(doc) }} · 📅 ควรเริ่มต่อ {{ doc.renew_by|thai }} · บันทึกเมื่อ {{ doc.created_at[:16].replace('T',' ') }}</p>
 {% else %}
   <h1>เพิ่มเอกสารด้วยตนเอง</h1>
   <p class="sub">สำหรับเอกสารที่ไม่มีไฟล์ หรือต้องการกรอกเอง</p>

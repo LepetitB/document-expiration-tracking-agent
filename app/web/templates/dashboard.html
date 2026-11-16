@@ -87,7 +87,7 @@
   </form>
   <div class="tbl-wrap">
   <table>
-    <thead><tr><th>สถานะ</th><th>รถ / คนขับ</th><th>ประเภทเอกสาร</th><th>เลขที่</th><th>วันหมดอายุ</th><th>คงเหลือ</th><th></th></tr></thead>
+    <thead><tr><th>สถานะ</th><th>รถ / คนขับ</th><th>ประเภทเอกสาร</th><th>เลขที่</th><th>วันหมดอายุ</th><th>📅 ควรเริ่มต่อ</th><th>คงเหลือ</th><th></th></tr></thead>
     <tbody>
     {% for d in docs %}
       <tr>
@@ -96,11 +96,12 @@
         <td>{{ doc_label(d.doc_type) }}</td>
         <td class="small">{{ d.doc_number or '-' }}</td>
         <td>{{ d.expiry_date|thai }}</td>
+        <td>{{ d.renew_by|thai }}</td>
         <td>{{ days(d) }}</td>
         <td><a class="btn ghost sm" href="{{ url_for('document_detail', doc_id=d.id) }}">เปิด</a></td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="muted">ไม่พบเอกสาร</td></tr>
+      <tr><td colspan="8" class="muted">ไม่พบเอกสาร</td></tr>
     {% endfor %}
     </tbody>
   </table>
