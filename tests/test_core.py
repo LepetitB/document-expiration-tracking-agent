@@ -81,3 +81,22 @@ def test_confidence_and_review():
 @pytest.mark.parametrize("left,expected", [(120, None), (90, 90), (75, 90), (30, 30), (7, 7), (3, 7), (0, 0), (-5, 0)])
 def test_due_threshold(left, expected):
     assert due_threshold(left) == expected
+
+
+def test_cost_and_usage_accounting():
+    from types import SimpleNamespace
+
+    from app import config
+    from app.extraction.extractor import usage_of
+
+    # 1M input + 1M output tokens on each model = its list price
+    assert config.cost_usd("claude-opus-5-5", 1_000_000, 1_000_000) == 24.0
+    assert config.cost_usd("claude-haiku-5-5", 1_000_000, 1_000_000) == 0.6
+    assert config.cost_usd("unknown-model", 10, 10) is None
+    resp = SimpleNamespace(model="claude-sonnet-5-5",
+                           usage=SimpleNamespace(input_tokens=1500, output_tokens=500,
+                                                 cache_creation_input_tokens=0, cache_read_input_tokens=0))
+    u = usage_of(resp, 3.14159)
+    assert u["seconds"] == 3.14 and u["input_tokens"] == 1500 and u["output_tokens"] == 500
+    assert abs(u["cost_usd"] - (1500 * 2 + 500 * 10) / 1e6) < 1e-12
+    assert abs(u["cost_thb"] - u["cost_usd"] * config.USD_TO_THB) < 1e-3

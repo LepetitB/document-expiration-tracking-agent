@@ -1,0 +1,210 @@
+{
+ "summary": {
+  "engine": "claude",
+  "model": "claude-sonnet-5-5",
+  "ext": "png",
+  "documents": 9,
+  "field_accuracy": {
+   "doc_type": 0.7777777777777778,
+   "expiry_date": 1.0,
+   "doc_number": 1.0,
+   "plate": 0.8888888888888888
+  },
+  "all_fields_correct": 6,
+  "sent_to_review": 3,
+  "false_confident": 0,
+  "seconds_avg": 3.928888888888889,
+  "seconds_p95": 4.74,
+  "input_tokens_avg": 2390.8888888888887,
+  "output_tokens_avg": 376.44444444444446,
+  "thb_per_doc": 0.29912222222222223,
+  "thb_total": 2.6921,
+  "thb_per_year": 38.88588888888889,
+  "usd_to_thb": 35.0,
+  "measured_at": "2026-11-19T22:12:23"
+ },
+ "rows": [
+  {
+   "file": "01_tax_70-1234",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": false,
+   "expiry_raw": "26/11/69",
+   "expiry": "2026-11-26",
+   "confidence": 0.85,
+   "problems": [],
+   "seconds": 4.43,
+   "input_tokens": 2464,
+   "output_tokens": 394,
+   "cost_thb": 0.3104,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "02_tax_72-4410",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": false,
+   "expiry_raw": "22 กรกฎาคม 2570",
+   "expiry": "2027-07-22",
+   "confidence": 0.9,
+   "problems": [],
+   "seconds": 3.37,
+   "input_tokens": 2371,
+   "output_tokens": 351,
+   "cost_thb": 0.2888,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "03_prb_71-0099",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": false,
+   "expiry_raw": "๑ ธ.ค. ๒๕๖๙",
+   "expiry": "2026-12-01",
+   "confidence": 0.92,
+   "problems": [],
+   "seconds": 3.64,
+   "input_tokens": 2392,
+   "output_tokens": 355,
+   "cost_thb": 0.2917,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "04_prb_70-5678",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": false,
+   "expiry_raw": "17/12/2569",
+   "expiry": "2026-12-17",
+   "confidence": 0.9,
+   "problems": [],
+   "seconds": 3.89,
+   "input_tokens": 2371,
+   "output_tokens": 324,
+   "cost_thb": 0.2794,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "05_insurance_70-1234",
+   "ok": {
+    "doc_type": false,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": false,
+   "needs_review": true,
+   "expiry_raw": "18 กุมภาพันธ์ 2570",
+   "expiry": "2027-02-18",
+   "confidence": 0.5,
+   "problems": [],
+   "seconds": 4.42,
+   "input_tokens": 2320,
+   "output_tokens": 452,
+   "cost_thb": 0.3206,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "06_insurance_72-9045_english",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": false,
+   "expiry_raw": "4 Dec 2026",
+   "expiry": "2026-12-04",
+   "confidence": 0.9,
+   "problems": [],
+   "seconds": 3.43,
+   "input_tokens": 2320,
+   "output_tokens": 315,
+   "cost_thb": 0.2727,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "07_insurance_71-3307",
+   "ok": {
+    "doc_type": false,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": false,
+   "needs_review": true,
+   "expiry_raw": "29 ธ.ค. 2569",
+   "expiry": "2026-12-29",
+   "confidence": 0.5,
+   "problems": [],
+   "seconds": 4.74,
+   "input_tokens": 2371,
+   "output_tokens": 509,
+   "cost_thb": 0.3441,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "08_driver_license_surachai",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": false
+   },
+   "all_ok": false,
+   "needs_review": true,
+   "expiry_raw": "2 ธันวาคม 2569",
+   "expiry": "2026-12-02",
+   "confidence": 0.45,
+   "problems": [
+    "ไม่พบคนขับชื่อ \"นายสุรชัย พึงบุญ\" ในระบบ — หมายถึง \"นายสุรชัย พึ่งบุญ\" ใช่ไหม?"
+   ],
+   "seconds": 3.85,
+   "input_tokens": 2464,
+   "output_tokens": 347,
+   "cost_thb": 0.2939,
+   "served_by": "claude-sonnet-5-5"
+  },
+  {
+   "file": "09_driver_license_boonlert",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": false,
+   "expiry_raw": "9 Jul 2027",
+   "expiry": "2027-07-09",
+   "confidence": 0.93,
+   "problems": [],
+   "seconds": 3.59,
+   "input_tokens": 2445,
+   "output_tokens": 341,
+   "cost_thb": 0.2905,
+   "served_by": "claude-sonnet-5-5"
+  }
+ ]
+}

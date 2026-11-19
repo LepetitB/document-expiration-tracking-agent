@@ -12,7 +12,9 @@ from datetime import date
 
 from app import config
 from app.agent import tools as T
-from app.extraction.extractor import call_claude
+import time
+
+from app.extraction.extractor import call_claude, usage_of
 from app.extraction.thai_date import to_thai
 
 MAX_TOOL_ROUNDS = 8
@@ -43,22 +45,29 @@ def _run_tool(name: str, args: dict) -> str:
     return json.dumps(fn(**args), ensure_ascii=False)
 
 
-def chat_claude(cid: str, user_text: str) -> tuple[str, list[str]]:
+def chat_claude(cid: str, user_text: str) -> tuple[str, list[str], dict]:
     messages = _CONVERSATIONS.setdefault(cid, [])
     messages.append({"role": "user", "content": user_text})
     system = SYSTEM_PROMPT + f"\n\nวันนี้คือ {date.today().isoformat()} ({to_thai(date.today())})"
     used: list[str] = []
+    total = {"calls": 0, "seconds": 0.0, "input_tokens": 0, "output_tokens": 0, "cost_thb": 0.0}
     for _ in range(MAX_TOOL_ROUNDS):
+        t0 = time.perf_counter()
         resp = call_claude(model=config.CLAUDE_MODEL, max_tokens=16000, system=system,
                            tools=T.TOOL_SCHEMAS, messages=messages,
                            output_config={"effort": "low"})
+        u = usage_of(resp, time.perf_counter() - t0)
+        total["calls"] += 1
+        for k in ("seconds", "input_tokens", "output_tokens"):
+            total[k] += u[k]
+        total["cost_thb"] += u["cost_thb"] or 0.0
         messages.append({"role": "assistant",
                          "content": [b.model_dump(mode="json", exclude_none=True) for b in resp.content]})
         if resp.stop_reason == "refusal":
-            return "ขออภัย ไม่สามารถตอบคำถามนี้ได้", used
+            return "ขออภัย ไม่สามารถตอบคำถามนี้ได้", used, total
         if resp.stop_reason != "tool_use":
             text = "\n".join(b.text for b in resp.content if b.type == "text").strip()
-            return text or "(ไม่มีคำตอบ)", used
+            return text or "(ไม่มีคำตอบ)", used, total
         results = []
         for b in resp.content:
             if b.type != "tool_use":
@@ -71,7 +80,7 @@ def chat_claude(cid: str, user_text: str) -> tuple[str, list[str]]:
                 results.append({"type": "tool_result", "tool_use_id": b.id,
                                 "content": f"error: {e}", "is_error": True})
         messages.append({"role": "user", "content": results})
-    return "ขออภัย ใช้เวลาค้นข้อมูลนานเกินไป ลองถามให้เฉพาะเจาะจงขึ้น", used
+    return "ขออภัย ใช้เวลาค้นข้อมูลนานเกินไป ลองถามให้เฉพาะเจาะจงขึ้น", used, total
 
 
 # --------------------------------------------------------------------------- offline fallback
@@ -139,8 +148,10 @@ def chat_offline(user_text: str) -> tuple[str, list[str]]:
 def chat(cid: str, user_text: str) -> dict:
     if config.has_claude_credentials():
         try:
-            answer, used = chat_claude(cid, user_text)
-            return {"answer": answer, "tools": used, "engine": "claude"}
+            answer, used, usage = chat_claude(cid, user_text)
+            usage["seconds"] = round(usage["seconds"], 1)
+            usage["cost_thb"] = round(usage["cost_thb"], 3)
+            return {"answer": answer, "tools": used, "engine": "claude", "usage": usage}
         except Exception as e:
             _CONVERSATIONS.pop(cid, None)
             answer, used = chat_offline(user_text)

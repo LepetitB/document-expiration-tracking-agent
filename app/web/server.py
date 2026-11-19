@@ -466,8 +466,10 @@ def drivers():
                 review_status="PENDING_REVIEW" if ex.get("needs_review") else "CONFIRMED", notes=ex.get("notes"))
             exp = to_thai(ex["expiry_date"]) if ex.get("expiry_date") else "อ่านไม่ได้"
             state = "รอตรวจทาน 🟣" if ex.get("needs_review") else "บันทึกแล้ว ✅"
+            u = ex.get("usage") or {}
+            cost = f" · ⏱️ {u['seconds']} วิ · 💰 {u.get('cost_thb') or 0:.2f} บาท" if u else ""
             flash(f"📄 AI อ่านใบขับขี่: {ex.get('holder_name') or '-'} · เลขที่ {ex.get('doc_number') or '-'} · "
-                  f"หมดอายุ {exp} — {state}", "ok")
+                  f"หมดอายุ {exp} — {state}{cost}", "ok")
         if not existing_id:
             flash(f"เพิ่มคนขับ {driver['name']} แล้ว" + ("" if licences else " (ยังไม่มีใบขับขี่ — แนบได้ที่หน้านี้)"), "ok")
         return redirect(url_for("owner_detail", owner_id=did))

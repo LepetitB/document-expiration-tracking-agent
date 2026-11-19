@@ -34,6 +34,15 @@
 | Frontend / UX Engineer | [ชื่อ] | [รหัส] |
 | Data & QA / Evaluation Lead | [ชื่อ] | [รหัส] |
 
+## 💰 ต้นทุนและความเร็ว (วัดจริง, 9 ภาพเอกสาร)
+| โมเดล | ถูกครบทุกฟิลด์ | อ่านผิดแต่ยืนยันเอง | วินาที/ฉบับ | บาท/ฉบับ | บาท/ปี (130 ฉบับ) |
+|------|:--:|:--:|:--:|:--:|:--:|
+| **Opus 5.5** (ค่าเริ่มต้น) | 9/9 | 0 | 6.3 | 0.65 | ~85 |
+| Sonnet 5.5 | 6/9 | 0 | 3.9 | 0.30 | ~39 |
+| Haiku 5.5 | 8/9 | 0 | 4.5 | 0.02 | ~3 |
+
+วัดซ้ำได้ด้วย `.venv\Scripts\python -m eval.evaluate --compare` · รายละเอียดใน [docs/05-results.md](docs/05-results.md)
+
 ## 🛠️ Tech Stack
 Python · Flask (เว็บแอปบน localhost) · Claude API `claude-opus-5-5` (vision + structured outputs + tool use) · SQLite · pypdf · pytest
 
@@ -74,7 +83,7 @@ app/agent/             # tools.py (5 tools), agent.py (Claude tool-use loop + �
 app/db/database.py     # SQLite
 app/web/               # server.py + templates/ + static/
 eval/evaluate.py       # วัดความแม่นยำรายฟิลด์
-tests/                 # pytest 38 tests
+tests/                 # pytest 39 tests
 ```
 
 ## 🎥 วิดีโอนำเสนอ

@@ -45,7 +45,7 @@ async function ask(text) {
     const data = await r.json();
     t.className = 'msg bot';
     t.innerHTML = md(data.answer || data.error) +
-      (data.tools && data.tools.length ? `<div class="meta">🔧 tools: ${data.tools.join(', ')} · ${data.engine}</div>` : `<div class="meta">${data.engine || ''}</div>`);
+      (() => { const u = data.usage ? ` · ⏱️ ${data.usage.seconds} วิ · ${data.usage.calls} รอบ · 💰 ${data.usage.cost_thb} บาท` : ''; return data.tools && data.tools.length ? `<div class="meta">🔧 tools: ${data.tools.join(', ')} · ${data.engine}${u}</div>` : `<div class="meta">${data.engine || ''}${u}</div>`; })();
   } catch (e) { t.className = 'msg bot'; t.textContent = 'เกิดข้อผิดพลาด: ' + e; }
   msgs.scrollTop = msgs.scrollHeight;
 }

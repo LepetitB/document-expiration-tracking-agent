@@ -14,6 +14,7 @@ import base64
 import json
 import mimetypes
 import re
+import time
 from pathlib import Path
 
 from app import config
@@ -75,7 +76,8 @@ def _claude_client():
 
 
 def call_claude(**kwargs):
-    """messages.create with server-side refusal fallbacks; plain request if the beta is rejected."""
+    """messages.create with server-side refusal fallbacks; plain request if the beta is rejected
+    (e.g. models without server-side fallback)."""
     import anthropic
 
     client = _claude_client()
@@ -85,6 +87,19 @@ def call_claude(**kwargs):
         )
     except anthropic.BadRequestError:
         return client.messages.create(**kwargs)
+
+
+def usage_of(resp, seconds: float) -> dict:
+    """Tokens, wall-clock time and cost of one API call (priced by the model that actually served it)."""
+    model = getattr(resp, "model", "") or ""
+    u = resp.usage
+    inp = (u.input_tokens or 0) + (getattr(u, "cache_creation_input_tokens", 0) or 0) \
+        + (getattr(u, "cache_read_input_tokens", 0) or 0)
+    out = u.output_tokens or 0
+    usd = config.cost_usd(model, inp, out)
+    return {"model": model, "input_tokens": inp, "output_tokens": out, "seconds": round(seconds, 2),
+            "cost_usd": round(usd, 6) if usd is not None else None,
+            "cost_thb": round(usd * config.USD_TO_THB, 4) if usd is not None else None}
 
 
 def _file_block(path: Path) -> dict:
@@ -99,26 +114,30 @@ def _file_block(path: Path) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}}
 
 
-def extract_with_claude(path: Path) -> dict:
+def extract_with_claude(path: Path, model: str | None = None) -> dict:
+    model = model or config.CLAUDE_MODEL
     if path.suffix.lower() == ".txt":
         content = [{"type": "text", "text": path.read_text(encoding="utf-8")}]
     else:
         content = [_file_block(path)]
     content.append({"type": "text", "text": EXTRACTION_PROMPT})
+    t0 = time.perf_counter()
     resp = call_claude(
-        model=config.CLAUDE_MODEL,
+        model=model,
         max_tokens=16000,
         output_config={"effort": config.EXTRACTION_EFFORT,
                        "format": {"type": "json_schema", "schema": EXTRACTION_SCHEMA}},
         messages=[{"role": "user", "content": content}],
     )
+    usage = usage_of(resp, time.perf_counter() - t0)
     if resp.stop_reason == "refusal":
         raise RuntimeError("Claude ปฏิเสธการประมวลผลเอกสารนี้")
     if resp.stop_reason == "max_tokens":
         raise RuntimeError("คำตอบยาวเกิน max_tokens")
     text = next(b.text for b in resp.content if b.type == "text")
     data = json.loads(text)
-    data["engine"] = f"claude:{config.CLAUDE_MODEL}"
+    data["engine"] = f"claude:{usage['model'] or model}"
+    data["usage"] = usage
     return data
 
 
@@ -211,9 +230,9 @@ def normalise(raw: dict) -> dict:
     return ex
 
 
-def extract(path: Path, engine: str = "auto") -> dict:
+def extract(path: Path, engine: str = "auto", model: str | None = None) -> dict:
     """Run extraction on a file. engine: 'auto' | 'claude' | 'rules'."""
     if engine == "auto":
         engine = "claude" if config.has_claude_credentials() else "rules"
-    raw = extract_with_claude(path) if engine == "claude" else extract_with_rules(path)
+    raw = extract_with_claude(path, model) if engine == "claude" else extract_with_rules(path)
     return normalise(raw)

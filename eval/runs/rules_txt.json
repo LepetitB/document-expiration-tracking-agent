@@ -1,0 +1,208 @@
+{
+ "summary": {
+  "engine": "rules",
+  "model": "-",
+  "ext": "txt",
+  "documents": 9,
+  "field_accuracy": {
+   "doc_type": 1.0,
+   "expiry_date": 1.0,
+   "doc_number": 1.0,
+   "plate": 1.0
+  },
+  "all_fields_correct": 9,
+  "sent_to_review": 9,
+  "false_confident": 0,
+  "seconds_avg": 0.027777777777777776,
+  "seconds_p95": 0.24,
+  "input_tokens_avg": 0,
+  "output_tokens_avg": 0,
+  "thb_per_doc": 0.0,
+  "thb_total": 0.0,
+  "thb_per_year": 0.0,
+  "usd_to_thb": 35.0,
+  "measured_at": "2026-11-19T22:09:28"
+ },
+ "rows": [
+  {
+   "file": "01_tax_70-1234",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "26/11/69",
+   "expiry": "2026-11-26",
+   "confidence": 0.6,
+   "problems": [],
+   "seconds": 0.24,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "02_tax_72-4410",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "22 กรกฎาคม 2570",
+   "expiry": "2027-07-22",
+   "confidence": 0.4,
+   "problems": [],
+   "seconds": 0.01,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "03_prb_71-0099",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "1 ธ.ค. 2569",
+   "expiry": "2026-12-01",
+   "confidence": 0.6,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "04_prb_70-5678",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "17/12/2569",
+   "expiry": "2026-12-17",
+   "confidence": 0.6,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "05_insurance_70-1234",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "18 กุมภาพันธ์ 2570",
+   "expiry": "2027-02-18",
+   "confidence": 0.6,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "06_insurance_72-9045_english",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "4 Dec 2026",
+   "expiry": "2026-12-04",
+   "confidence": 0.6,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "07_insurance_71-3307",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "29 ธ.ค. 2569",
+   "expiry": "2026-12-29",
+   "confidence": 0.4,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "08_driver_license_surachai",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "2 ธันวาคม 2569",
+   "expiry": "2026-12-02",
+   "confidence": 0.4,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  },
+  {
+   "file": "09_driver_license_boonlert",
+   "ok": {
+    "doc_type": true,
+    "expiry_date": true,
+    "doc_number": true,
+    "plate": true
+   },
+   "all_ok": true,
+   "needs_review": true,
+   "expiry_raw": "9 Jul 2027",
+   "expiry": "2027-07-09",
+   "confidence": 0.6,
+   "problems": [],
+   "seconds": 0.0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cost_thb": 0.0,
+   "served_by": null
+  }
+ ]
+}

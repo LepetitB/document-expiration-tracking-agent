@@ -7,7 +7,8 @@
 {%- endmacro %}
 {% block content %}
 <h1>ผลการอ่านเอกสาร</h1>
-<p class="sub">AI อ่านเอกสาร {{ saved|length }} ไฟล์ แล้วจัดเข้ารถให้แล้ว — แถวสีฟ้าคือเอกสารที่เพิ่งแนบ · เอกสารที่ AI ไม่มั่นใจจะรอให้คนตรวจก่อน</p>
+{% set used = saved|map(attribute=2)|selectattr("usage")|map(attribute="usage")|list %}
+<p class="sub">AI อ่านเอกสาร {{ saved|length }} ไฟล์{% if used %} ⏱️ {{ "%.1f"|format(used|sum(attribute="seconds")) }} วินาที · 💰 {{ "%.2f"|format(used|sum(attribute="cost_thb")) }} บาท{% endif %} แล้วจัดเข้ารถให้แล้ว — แถวสีฟ้าคือเอกสารที่เพิ่งแนบ · เอกสารที่ AI ไม่มั่นใจจะรอให้คนตรวจก่อน</p>
 
 {% for e in errors %}<div class="flash warn">❌ {{ e.filename }}: {{ e.error }}</div>{% endfor %}
 
@@ -61,7 +62,7 @@
   <summary><b>รายละเอียดการอ่านแต่ละไฟล์</b> (ข้อความวันที่ดิบ → แปลงแล้ว, ความมั่นใจ)</summary>
   <div class="tbl-wrap" style="margin-top:10px">
   <table>
-    <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>ทะเบียน / ชื่อ</th><th>วันหมดอายุ (ดิบ → แปลง)</th><th>ความมั่นใจ</th><th>ข้อสังเกต</th></tr></thead>
+    <thead><tr><th>ไฟล์</th><th>ประเภท</th><th>ทะเบียน / ชื่อ</th><th>วันหมดอายุ (ดิบ → แปลง)</th><th>ความมั่นใจ</th><th>เวลา · โทเคน · ต้นทุน</th><th>ข้อสังเกต</th></tr></thead>
     <tbody>
     {% for fn, did, ex in saved %}
       <tr><td class="small">{{ fn }}<br><span class="muted">{{ ex.engine }}</span></td>
@@ -69,6 +70,7 @@
         <td>{{ ex.vehicle_plate or ex.holder_name or '-' }}</td>
         <td><span class="muted small">{{ ex.expiry_date_raw or '-' }}</span><br>→ <b>{{ ex.expiry_date|thai }}</b></td>
         <td>{{ conf(ex.confidence) }}</td>
+        <td class="small">{% if ex.usage %}{{ ex.usage.seconds }} วิ<br>{{ ex.usage.input_tokens }} / {{ ex.usage.output_tokens }} โทเคน<br>{{ '%.3f'|format(ex.usage.cost_thb or 0) }} บาท{% else %}-{% endif %}</td>
         <td class="small">{{ ex.problems|join(', ') or '-' }}</td></tr>
     {% endfor %}
     </tbody>
